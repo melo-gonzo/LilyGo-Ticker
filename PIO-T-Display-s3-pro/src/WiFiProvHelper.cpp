@@ -4,7 +4,7 @@
 
 #include "ui.h"
 #include "TimeHelper.h"
-#include "BinanceWebSocket.h"  // Include the WebSocket header
+#include "WebSocket.h"  // Include the WebSocket header
 
 extern "C" {
     #include "esp_wifi.h"
@@ -28,8 +28,8 @@ void SysProvEvent(arduino_event_t *sys_event) {
             delay(5000);
             initiateNTPTimeSync();  // Start NTP sync
 
-            // Initialize Binance WebSocket for real-time Bitcoin data
-            initBinanceWebSocket();
+            // Initialize WebSocket for real-time Bitcoin data
+            initWebSocket();
 
             // Load the main screen (ui_crypto)
             lv_scr_load(ui_crypto);

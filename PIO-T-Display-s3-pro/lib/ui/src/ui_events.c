@@ -11,7 +11,7 @@ void load_Screen_chart(lv_event_t * e)
 
     // Fetch the candlestick data and create the chart
     if (fetch_candle_data()) {
-        biance_candle_stick_create(ui_chart);
+        candle_stick_create(ui_chart);
     }
 
 }

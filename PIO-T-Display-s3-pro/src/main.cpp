@@ -7,8 +7,8 @@
 #include "TimeHelper.h"
 #include "WiFiProvHelper.h"
 #include "WiFiProvScreen.h"
-#include "BinanceWebSocket.h"
-#include "BianceCandleStick.h"
+#include "WebSocket.h"
+#include "CandleStick.h"
 
 // Define display and touch hardware specifics
 LilyGo_Class amoled;
@@ -80,8 +80,8 @@ void setup() {
             Serial.println("[DEBUG] Connected to Wi-Fi. Starting background tasks.");
             initiateNTPTimeSync();  // Start NTP sync
 
-            // Initialize Binance WebSocket to get real-time Bitcoin data
-            initBinanceWebSocket();
+            // Initialize  WebSocket to get real-time Bitcoin data
+            initWebSocket();
 
             lv_scr_load(ui_crypto);  // Load the main screen (ui_crypto)
         } else {
@@ -104,7 +104,7 @@ void loop() {
     delay(5);
 
     // Handle WebSocket communication
-    handleBinanceWebSocket();
+    handleWebSocket();
 
     // Update time and date regularly from NTP (e.g., every second)
     static unsigned long lastTimeUpdate = 0;
