@@ -1,5 +1,4 @@
 #include "ui.h"
-#include "ui_helpers.h"
 #include "lvgl.h"
 
 void ui_chart_screen_init(void)

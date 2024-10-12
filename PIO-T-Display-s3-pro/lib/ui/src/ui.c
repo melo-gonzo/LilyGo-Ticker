@@ -1,5 +1,4 @@
 #include "ui.h"
-#include "ui_helpers.h"
 
 lv_obj_t *ui_chart;
 
