@@ -20,10 +20,11 @@ static float current_price = 0.0;  // Added to store current price
 
 
 static float getRandomPrice() {
-    static float lastPrice = 50.0; // Start at 100
+    static float lastPrice = 50.0; // Start at 50
     float change = (random(-100, 101) / 100.0) * 2; // Random change between -2 and 2
     lastPrice += change;
     lastPrice = max(0.0f, lastPrice); // Ensure price doesn't go negative
+    current_price = lastPrice; // Update current price with random value
     return lastPrice;
 }
 
@@ -39,15 +40,16 @@ static void update_circular_buffer(float currentPrice, time_t now) {
     candles[newest_candle_index].low = currentPrice;
     candles[newest_candle_index].close = currentPrice;
     timestamps[newest_candle_index] = now;
+    current_price = currentPrice; // Update current price when updating buffer
 }
 
 static float getCurrentPrice(const char* symbol) {
     if (USE_TEST_DATA) {
-        current_price = getRandomPrice();
-        return current_price;
+        return getRandomPrice();
     }
 
     HTTPClient http;
+    // https://query1.finance.yahoo.com/v8/finance/chart/BTC?interval=1d&range=1d
     String url = "https://query1.finance.yahoo.com/v8/finance/chart/" + String(symbol) + "?interval=1d&range=1d";
     http.begin(url);
     int httpCode = http.GET();
@@ -85,6 +87,8 @@ bool fetch_intraday_data(const char *symbol) {
     if (currentPrice == 0.0) {
         return false;
     }
+    
+    current_price = currentPrice; // Update current price
     
     if (num_candles == 0 || (now / CANDLE_COLLECTION_DURATION) != (timestamps[newest_candle_index] / CANDLE_COLLECTION_DURATION)) {
         update_circular_buffer(currentPrice, now);
@@ -215,21 +219,26 @@ static void draw_current_price_line(lv_obj_t *parent, float current_price, float
 
     // Draw horizontal line
     lv_obj_t *price_line = lv_obj_create(parent);
-    lv_obj_set_size(price_line, chart_width, 1);
-    lv_obj_set_style_bg_color(price_line, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(price_line, LV_OPA_50, 0);  // Semi-transparent
+    lv_obj_set_size(price_line, chart_width, 2);  // Made line slightly thicker
+    lv_obj_set_style_bg_color(price_line, lv_color_make(0, 255, 255), 0);  // Cyan color for better visibility
+    lv_obj_set_style_bg_opa(price_line, LV_OPA_70, 0);  // More opaque
     lv_obj_set_style_border_width(price_line, 0, 0);
     lv_obj_align(price_line, LV_ALIGN_TOP_LEFT, 0, y_current);
 
     // Create current price label on the right
     lv_obj_t *current_label = lv_label_create(parent);
-    char price_str[16];
+    char price_str[32];
     snprintf(price_str, sizeof(price_str), "%.2f", current_price);
     lv_label_set_text(current_label, price_str);
-    lv_obj_set_style_text_color(current_label, lv_color_white(), 0);
+    
+    // Style the current price label
+    lv_obj_set_style_text_color(current_label, lv_color_make(0, 255, 255), 0);  // Cyan text
     lv_obj_set_style_bg_color(current_label, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(current_label, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_all(current_label, 2, 0);
+    lv_obj_set_style_pad_all(current_label, 5, 0);  // Add more padding
+    lv_obj_set_style_radius(current_label, 4, 0);   // Rounded corners
+    
+    // Position the label on the right side at the current price level
     lv_obj_align(current_label, LV_ALIGN_TOP_RIGHT, -5, y_current - 10);
 }
 
@@ -261,10 +270,8 @@ void candle_stick_create(lv_obj_t *parent, const char *symbol) {
                          draw_min, draw_max);
     }
 
-    // Draw current price line and label
-    if (current_price > 0) {
-        draw_current_price_line(chart_container, current_price, draw_min, draw_max);
-    }
+    // Always draw current price line since we're maintaining the current_price
+    draw_current_price_line(chart_container, current_price, draw_min, draw_max);
 
     // Add price labels
     char min_price_str[16], max_price_str[16];
