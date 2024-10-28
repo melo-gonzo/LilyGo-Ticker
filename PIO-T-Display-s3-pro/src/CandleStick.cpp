@@ -14,6 +14,7 @@ static long timestamps[MAX_CANDLES];
 static int newest_candle_index = -1;
 static int num_candles = 0;
 static time_t last_update_time = 0;
+static float current_price = 0.0;  // Added to store current price
 
 #define API_URL "https://query1.finance.yahoo.com/v8/finance/chart/"
 
@@ -42,7 +43,8 @@ static void update_circular_buffer(float currentPrice, time_t now) {
 
 static float getCurrentPrice(const char* symbol) {
     if (USE_TEST_DATA) {
-        return getRandomPrice();
+        current_price = getRandomPrice();
+        return current_price;
     }
 
     HTTPClient http;
@@ -50,7 +52,7 @@ static float getCurrentPrice(const char* symbol) {
     http.begin(url);
     int httpCode = http.GET();
     
-    float currentPrice = 0.0;
+    float price = 0.0;
 
     if (httpCode == HTTP_CODE_OK) {
         String payload = http.getString();
@@ -60,12 +62,13 @@ static float getCurrentPrice(const char* symbol) {
         if (!error) {
             JsonObject chart = doc["chart"]["result"][0];
             JsonObject quote = chart["indicators"]["quote"][0];
-            currentPrice = quote["close"][0];
+            price = quote["close"][0];
         }
     }
 
     http.end();
-    return currentPrice;
+    current_price = price;  // Store the current price
+    return price;
 }
 
 bool fetch_intraday_data(const char *symbol) {
@@ -202,6 +205,34 @@ static void draw_candlestick(lv_obj_t *parent, int index, float open, float clos
     lv_obj_align(body, LV_ALIGN_TOP_LEFT, x, body_y);
 }
 
+static void draw_current_price_line(lv_obj_t *parent, float current_price, float min_price, float max_price) {
+    lv_coord_t chart_width = lv_obj_get_width(parent);
+    lv_coord_t chart_height = lv_obj_get_height(parent);
+
+    // Calculate y position for current price
+    int y_current = chart_height * (1.0f - (current_price - min_price) / (max_price - min_price));
+    y_current = constrain(y_current, 0, chart_height);
+
+    // Draw horizontal line
+    lv_obj_t *price_line = lv_obj_create(parent);
+    lv_obj_set_size(price_line, chart_width, 1);
+    lv_obj_set_style_bg_color(price_line, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(price_line, LV_OPA_50, 0);  // Semi-transparent
+    lv_obj_set_style_border_width(price_line, 0, 0);
+    lv_obj_align(price_line, LV_ALIGN_TOP_LEFT, 0, y_current);
+
+    // Create current price label on the right
+    lv_obj_t *current_label = lv_label_create(parent);
+    char price_str[16];
+    snprintf(price_str, sizeof(price_str), "%.2f", current_price);
+    lv_label_set_text(current_label, price_str);
+    lv_obj_set_style_text_color(current_label, lv_color_white(), 0);
+    lv_obj_set_style_bg_color(current_label, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(current_label, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(current_label, 2, 0);
+    lv_obj_align(current_label, LV_ALIGN_TOP_RIGHT, -5, y_current - 10);
+}
+
 void candle_stick_create(lv_obj_t *parent, const char *symbol) {
     lv_obj_t *chart_container = (lv_obj_t *)lv_obj_get_user_data(parent);
     if (chart_container == NULL) {
@@ -220,6 +251,7 @@ void candle_stick_create(lv_obj_t *parent, const char *symbol) {
     float draw_min = std::max(min_price - padding, 0.0f);
     float draw_max = max_price + padding;
 
+    // Draw candlesticks
     for (int i = 0; i < num_candles; i++) {
         int index = (newest_candle_index - num_candles + i + 1 + MAX_CANDLES) % MAX_CANDLES;
         draw_candlestick(chart_container, i, candles[index].open, 
@@ -227,6 +259,11 @@ void candle_stick_create(lv_obj_t *parent, const char *symbol) {
                          candles[index].high, 
                          candles[index].low, 
                          draw_min, draw_max);
+    }
+
+    // Draw current price line and label
+    if (current_price > 0) {
+        draw_current_price_line(chart_container, current_price, draw_min, draw_max);
     }
 
     // Add price labels
