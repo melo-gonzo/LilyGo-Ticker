@@ -5,7 +5,7 @@
 
 #define TIME_ZONE "PST8PDT" // Set to the desired time zone
 
-#define MAX_CANDLES 20  // Define this as a constant
+#define MAX_CANDLES 120  // Define this as a constant
 
 // Stock data configuration
 extern bool USE_TEST_DATA;
