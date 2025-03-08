@@ -242,6 +242,46 @@ static void draw_current_price_line(lv_obj_t *parent, float current_price, float
     lv_obj_align(current_label, LV_ALIGN_TOP_RIGHT, -5, y_current - 10);
 }
 
+static void draw_price_gridlines(lv_obj_t *parent, float min_price, float max_price) {
+    lv_coord_t chart_width = lv_obj_get_width(parent);
+    lv_coord_t chart_height = lv_obj_get_height(parent);
+    
+    // Find the first whole dollar above min_price
+    float first_line = ceil(min_price);
+    // Find the last whole dollar below max_price
+    float last_line = floor(max_price);
+    
+    // Light gray color for grid lines
+    lv_color_t grid_color = lv_color_make(100, 100, 100); // Light gray
+    
+    // Draw a horizontal line for each whole dollar price
+    for (float price = first_line; price <= last_line; price += 1.0f) {
+        // Calculate y position
+        int y_pos = chart_height * (1.0f - (price - min_price) / (max_price - min_price));
+        y_pos = constrain(y_pos, 0, chart_height);
+        
+        // Create horizontal line
+        lv_obj_t *grid_line = lv_obj_create(parent);
+        lv_obj_set_size(grid_line, chart_width, 1); // 1px thin line
+        lv_obj_set_style_bg_color(grid_line, grid_color, 0);
+        lv_obj_set_style_bg_opa(grid_line, LV_OPA_50, 0); // Semi-transparent
+        lv_obj_set_style_border_width(grid_line, 0, 0);
+        lv_obj_align(grid_line, LV_ALIGN_TOP_LEFT, 0, y_pos);
+        
+        // Optionally add price labels on the right side
+        // Uncomment if you want small price labels on each line
+        /*
+        lv_obj_t *price_label = lv_label_create(parent);
+        char price_str[8];
+        snprintf(price_str, sizeof(price_str), "%.0f", price);
+        lv_label_set_text(price_label, price_str);
+        lv_obj_set_style_text_color(price_label, grid_color, 0);
+        lv_obj_set_style_text_font(price_label, &lv_font_montserrat_12, 0); // Use smaller font
+        lv_obj_align(price_label, LV_ALIGN_TOP_RIGHT, -2, y_pos - 5);
+        */
+    }
+}
+
 void candle_stick_create(lv_obj_t *parent, const char *symbol) {
     lv_obj_t *chart_container = (lv_obj_t *)lv_obj_get_user_data(parent);
     if (chart_container == NULL) {
@@ -259,6 +299,8 @@ void candle_stick_create(lv_obj_t *parent, const char *symbol) {
     float padding = range * 0.1; // 10% padding
     float draw_min = std::max(min_price - padding, 0.0f);
     float draw_max = max_price + padding;
+
+    draw_price_gridlines(chart_container, draw_min, draw_max);
 
     // Draw candlesticks
     for (int i = 0; i < num_candles; i++) {
