@@ -2,7 +2,7 @@
 Inspired from [this project](https://github.com/nishad2m8/BTC-Ticker), I wanted a simple way to keep up with market price movements during the intraday time frame. This project heavily refactors the linked projects code to accomplish a few key tasks:
 1. Pull intraday stock market data for one ticker from yahoo finance
 2. Provide a testing mechanism to preview how OHLC data is visualized
-3. Lay a framework down to eventually pull data from a separate database, populated using something like (CandleCollector)[https://github.com/melo-gonzo/CandleCollector]
+3. Lay a framework down to eventually pull data from a separate database, populated using something like [CandleCollector](https://github.com/melo-gonzo/CandleCollector)
 
 This framework supports daily visualizations as well, however it is not the main focus.
 
@@ -30,6 +30,6 @@ Feel free to contribute via Issues and PR's, I will happily review and incorpora
 
 ### Future Plans
 The current workflow pulls data continuously by querying the yahoo finance api, regardless of if the market is open or not. This means that outside of trading hours, the screen displays partial or no data at all. Also, data does not persist across reboots, as it is not saved anywhere.
-* Integrate the (CandleCollector)[https://github.com/melo-gonzo/CandleCollector] project with this one, and save CandleCollector data to a database, which will help with persisting data across reboots.
+* Integrate the [CandleCollector](https://github.com/melo-gonzo/CandleCollector) project with this one, and save CandleCollector data to a database, which will help with persisting data across reboots.
 * Add a web interface that can be used for dynamically updating params (using test data, ticker, refresh rate, candle window, etc.)
 * Clean up the display and add some more info (timestamps, ticker info, etc.)
