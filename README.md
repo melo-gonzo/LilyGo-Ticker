@@ -4,6 +4,8 @@ Inspired from [this project](https://github.com/nishad2m8/BTC-Ticker), I wanted 
 2. Provide a testing mechanism to preview how OHLC data is visualized
 3. Lay a framework down to eventually pull data from a separate database, populated using something like [CandleCollector](https://github.com/melo-gonzo/CandleCollector)
 
+The specific board I have been using is the [T-Display S3 AMOLED](https://lilygo.cc/products/t-display-s3-amoled-us?_pos=4&_sid=1d7fdbdc0&_ss=r)
+
 ![image](IMG_0026.JPG)
 
 This framework supports daily visualizations as well, however it is not the main focus.
