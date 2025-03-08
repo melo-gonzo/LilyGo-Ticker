@@ -12,15 +12,15 @@ This framework supports daily visualizations as well, however it is not the main
 
 ### Getting started
 1. Clone the repo
-`git clone https://github.com/melo-gonzo/CandleCollector.git`
+   `git clone https://github.com/melo-gonzo/CandleCollector.git`
 2. Update wifi credentials in `credentials.h`. Use the `credentials_template.h` for reference. 
 3. Update `Config.h` with your timezone, and the maximum number of candles to display in the chart.
 4. Update parameters `config.cpp`
-    a. `USE_TEST_DATA` (bool) - default to `false`. Uses fake, randomly generated OHLC price data when `true.
-    b. `USE_INTRADAY_DATA` (bool) - defaults to `true`. Alters the yahoo finance api endpoint where data is queried from. 
-    c. `INTRADAY_UPDATE_INTERVAL` (int) - refresh rate in seconds. Must be `>=1`. 
-    d. `CANDLE_COLLECTION_DURATION` (int) - time window used to collate OHLC data. Must be `>= 4*INTRADAY_UPDATE_INTERVAL` to get a full _candle_. 
-    e. `STOCK_SYMBOL` (char) - stock ticker to collect data for. 
+   - `USE_TEST_DATA` (bool) - default to `false`. Uses fake, randomly generated OHLC price data when `true`.
+   - `USE_INTRADAY_DATA` (bool) - defaults to `true`. Alters the yahoo finance api endpoint where data is queried from. 
+   - `INTRADAY_UPDATE_INTERVAL` (int) - refresh rate in seconds. Must be `>=1`. 
+   - `CANDLE_COLLECTION_DURATION` (int) - time window used to collate OHLC data. Must be `>= 4*INTRADAY_UPDATE_INTERVAL` to get a full _candle_. 
+   - `STOCK_SYMBOL` (char) - stock ticker to collect data for.
 
 Three default configs are prepopulated:
 - Intraday with real data (3min candles, 5sec refresh)
