@@ -5,6 +5,7 @@ Inspired from [this project](https://github.com/nishad2m8/BTC-Ticker), I wanted 
 3. Lay a framework down to eventually pull data from a separate database, populated using something like [CandleCollector](https://github.com/melo-gonzo/CandleCollector)
 
 The specific board I have been using is the [T-Display S3 AMOLED](https://lilygo.cc/products/t-display-s3-amoled-us?_pos=4&_sid=1d7fdbdc0&_ss=r)
+
 If you need a sweet case, check out [this one](https://www.printables.com/model/1222074-lilygo-t-display-s3-amoled-version-20-case-remix) on Printables! 
 
 ![image](IMG_0026.JPG)
