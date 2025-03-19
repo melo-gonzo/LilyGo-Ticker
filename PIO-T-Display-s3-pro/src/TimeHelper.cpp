@@ -18,21 +18,29 @@ void initiateNTPTimeSync() {
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
     setenv("TZ", TIME_ZONE, 1);
     tzset();
-
+    
     // Wait for time to be set
     time_t now = time(nullptr);
     int retries = 0;
-    while (now < 8 * 3600 * 2 && retries < 10) {
+    while (now < 8 * 3600 * 2 && retries < 20) { // Increased retries for more reliability
         delay(500);
+        Serial.println("Waiting for NTP time sync...");
         now = time(nullptr);
         retries++;
     }
     
     if (now > 8 * 3600 * 2) {
         ntpSyncCompleted = true;
-        Serial.println("NTP time sync completed");
+        Serial.println("NTP time sync completed successfully");
+        
+        // Print current time to verify
+        struct tm timeinfo;
+        localtime_r(&now, &timeinfo);
+        char timeStr[30];
+        strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S %Z", &timeinfo);
+        Serial.printf("Current time: %s\n", timeStr);
     } else {
-        Serial.println("NTP time sync failed");
+        Serial.println("NTP time sync failed after retries");
     }
 }
 
@@ -40,10 +48,12 @@ bool isTimeSynchronized() {
     return ntpSyncCompleted;
 }
 
-
-
 // Find an object with specific ID in a container - same as in CandleStick.cpp
 static lv_obj_t* find_obj_by_id(lv_obj_t *parent, uint32_t id) {
+    if (parent == NULL) {
+        return NULL;
+    }
+    
     uint32_t child_cnt = lv_obj_get_child_cnt(parent);
     for (uint32_t i = 0; i < child_cnt; i++) {
         lv_obj_t *child = lv_obj_get_child(parent, i);
@@ -59,6 +69,12 @@ static lv_obj_t* find_obj_by_id(lv_obj_t *parent, uint32_t id) {
 
 void updateTimeAndDate() {
     if (!ntpSyncCompleted) {
+        // Try to sync if not already synchronized
+        static unsigned long lastSyncAttempt = 0;
+        if (millis() - lastSyncAttempt > 60000) { // Try every minute
+            initiateNTPTimeSync();
+            lastSyncAttempt = millis();
+        }
         return;
     }
 
@@ -99,7 +115,7 @@ void updateTimeAndDate() {
                 lv_obj_align(date_label, LV_ALIGN_BOTTOM_MID, 0, -10);
             }
             
-            // Update the labels
+            // Update the labels with the current time and date
             lv_label_set_text(time_label, timeStr);
             lv_label_set_text(date_label, dateStr);
         }

@@ -1,7 +1,7 @@
-// market_hours.h simplified version
 #pragma once
 
 #include <time.h>
+#include <string>
 #include "config.h"  // For USE_TEST_DATA
 
 namespace StockTracker {
@@ -11,7 +11,6 @@ const int MARKET_OPEN_HOUR = 6;    // 6:30 AM PST
 const int MARKET_OPEN_MINUTE = 30;
 const int MARKET_CLOSE_HOUR = 13;  // 1:00 PM PST
 const int MARKET_CLOSE_MINUTE = 0;
-const bool ENFORCE_HOURS = true;   // Set to false to bypass hour checks
 
 class MarketHoursChecker {
 public:
@@ -21,8 +20,13 @@ public:
             return true;
         }
 
+        // Check if we have a valid time before making determinations
         time_t now;
         time(&now);
+        if (now < 8 * 3600 * 2) { // Basic check if time is set properly
+            return true; // Default to open if time isn't properly set
+        }
+        
         struct tm timeinfo;
         localtime_r(&now, &timeinfo);
 
@@ -44,6 +48,12 @@ public:
     static std::string getNextMarketOpen() {
         time_t now;
         time(&now);
+        
+        // Basic check if time is set properly
+        if (now < 8 * 3600 * 2) {
+            return "Time not synced";
+        }
+        
         struct tm timeinfo;
         localtime_r(&now, &timeinfo);
 
@@ -52,10 +62,17 @@ public:
         timeinfo.tm_min = MARKET_OPEN_MINUTE;
         timeinfo.tm_sec = 0;
 
-        // If we're past today's market open, move to next day
-        if (!isMarketOpen() && timeinfo.tm_hour * 60 + timeinfo.tm_min < 
-            MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE) {
-            timeinfo.tm_mday += 1;
+        // If we're past today's market open time but before market close, 
+        // keep the same day, just show today's opening time
+        if (!isMarketOpen()) {
+            int currentMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+            int marketEndMinutes = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE;
+            
+            if (currentMinutes >= marketEndMinutes) {
+                // Already past market close, move to next day
+                timeinfo.tm_mday += 1;
+                mktime(&timeinfo); // Normalize date
+            }
         }
 
         // Skip weekends
@@ -65,7 +82,7 @@ public:
         }
 
         char buffer[30];
-        strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S %Z", &timeinfo);
+        strftime(buffer, sizeof(buffer), "%a %b %d %H:%M %Z", &timeinfo);
         return std::string(buffer);
     }
 };

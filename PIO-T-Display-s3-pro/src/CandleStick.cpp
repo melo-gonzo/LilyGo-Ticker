@@ -505,38 +505,57 @@ void candle_stick_create(lv_obj_t *parent, const char *symbol) {
 }
 
 void update_intraday_data(const char *symbol) {
-    static bool displayed_closed_message = false;
+    static bool market_closed_border = false;
     
     if (USE_INTRADAY_DATA) {
-        // Only check market hours for real data
-        if (!USE_TEST_DATA && !StockTracker::MarketHoursChecker::isMarketOpen()) {
-            // Display market closed message if not already displayed
-            if (!displayed_closed_message) {
-                // Get the chart container
-                lv_obj_t *chart_container = (lv_obj_t *)lv_obj_get_user_data(ui_chart);
-                if (chart_container != NULL) {
-                    // Create market closed message
-                    lv_obj_t *closed_msg = lv_label_create(chart_container);
-                    std::string nextOpen = StockTracker::MarketHoursChecker::getNextMarketOpen();
-                    lv_label_set_text_fmt(closed_msg, "Market Closed\nNext Open: %s", nextOpen.c_str());
-                    lv_obj_align(closed_msg, LV_ALIGN_CENTER, 0, 0);
-                    lv_obj_set_style_text_color(closed_msg, lv_color_make(255, 100, 100), 0);  // Light red
-                    lv_obj_set_style_text_align(closed_msg, LV_TEXT_ALIGN_CENTER, 0);
-                    
-                    displayed_closed_message = true;
+        // Check market hours for real data
+        bool is_market_open = USE_TEST_DATA || !ENFORCE_MARKET_HOURS || 
+                             StockTracker::MarketHoursChecker::isMarketOpen();
+        
+        // Fetch data regardless of market hours
+        fetch_intraday_data(symbol);
+        
+        // Create chart with data
+        candle_stick_create(ui_chart, symbol);
+        
+        // Get the chart container
+        lv_obj_t *chart_container = (lv_obj_t *)lv_obj_get_user_data(ui_chart);
+        if (chart_container != NULL) {
+            if (!is_market_open && !market_closed_border) {
+                // Add orange border around the chart when market is closed
+                lv_obj_set_style_border_width(chart_container, 3, 0);
+                lv_obj_set_style_border_color(chart_container, lv_color_make(255, 140, 0), 0); // Orange
+                market_closed_border = true;
+                
+                // Use the info panel to indicate market is closed
+                lv_obj_t *info_panel = find_obj_by_id(chart_container, INFO_PANEL_ID);
+                if (info_panel != NULL) {
+                    // Find status label or create if it doesn't exist
+                    lv_obj_t *status_label = find_obj_by_id(info_panel, 0x1008); // New ID for status
+                    if (status_label == NULL) {
+                        status_label = lv_label_create(info_panel);
+                        lv_obj_set_user_data(status_label, (void*)0x1008);
+                        lv_obj_set_style_text_color(status_label, lv_color_make(255, 140, 0), 0); // Orange
+                        lv_obj_align(status_label, LV_ALIGN_TOP_MID, 0, 120); // Below other info
+                    }
+                    lv_label_set_text(status_label, "MARKET CLOSED");
+                }
+            } 
+            else if (is_market_open && market_closed_border) {
+                // Remove orange border when market opens
+                lv_obj_set_style_border_width(chart_container, 0, 0);
+                market_closed_border = false;
+                
+                // Remove closed market status label if it exists
+                lv_obj_t *info_panel = find_obj_by_id(chart_container, INFO_PANEL_ID);
+                if (info_panel != NULL) {
+                    lv_obj_t *status_label = find_obj_by_id(info_panel, 0x1008);
+                    if (status_label != NULL) {
+                        lv_obj_del(status_label);
+                    }
                 }
             }
-            return;  // Don't fetch data when market is closed
         }
-        
-        // Reset the flag if the market is open
-        if (StockTracker::MarketHoursChecker::isMarketOpen()) {
-            displayed_closed_message = false;
-        }
-        
-        // Continue with normal data fetching
-        fetch_intraday_data(symbol);
-        candle_stick_create(ui_chart, symbol);
     }
 }
 
