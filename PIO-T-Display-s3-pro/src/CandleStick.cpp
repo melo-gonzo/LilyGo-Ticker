@@ -8,6 +8,16 @@
 #include "config.h"
 
 #define CANDLE_PADDING 0
+#define INFO_PANEL_WIDTH 80  // Width in pixels for the right side info panel
+// Define IDs for our user data objects
+#define INFO_PANEL_ID 0x1001
+#define SYMBOL_LABEL_ID 0x1002
+#define PRICE_LABEL_ID 0x1003
+#define HIGH_LABEL_ID 0x1004
+#define LOW_LABEL_ID 0x1005
+#define TIME_LABEL_ID 0x1006
+#define DATE_LABEL_ID 0x1007
+
 
 static candle_t candles[MAX_CANDLES];
 static long timestamps[MAX_CANDLES];
@@ -171,7 +181,8 @@ static void get_price_levels(float *min_price, float *max_price) {
 }
 
 static void draw_candlestick(lv_obj_t *parent, int index, float open, float close, float high, float low, float min_price, float max_price) {
-    lv_coord_t chart_width = lv_obj_get_width(parent);
+    // Calculate chart width excluding the info panel
+    lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
     lv_coord_t chart_height = lv_obj_get_height(parent);
 
     int candle_width = (chart_width / MAX_CANDLES) - CANDLE_PADDING;
@@ -210,7 +221,8 @@ static void draw_candlestick(lv_obj_t *parent, int index, float open, float clos
 }
 
 static void draw_current_price_line(lv_obj_t *parent, float current_price, float min_price, float max_price) {
-    lv_coord_t chart_width = lv_obj_get_width(parent);
+    // Calculate chart width excluding the info panel
+    lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
     lv_coord_t chart_height = lv_obj_get_height(parent);
 
     // Calculate y position for current price
@@ -224,26 +236,11 @@ static void draw_current_price_line(lv_obj_t *parent, float current_price, float
     lv_obj_set_style_bg_opa(price_line, LV_OPA_70, 0);  // More opaque
     lv_obj_set_style_border_width(price_line, 0, 0);
     lv_obj_align(price_line, LV_ALIGN_TOP_LEFT, 0, y_current);
-
-    // Create current price label on the right
-    lv_obj_t *current_label = lv_label_create(parent);
-    char price_str[32];
-    snprintf(price_str, sizeof(price_str), "%.2f", current_price);
-    lv_label_set_text(current_label, price_str);
-    
-    // Style the current price label
-    lv_obj_set_style_text_color(current_label, lv_color_make(0, 255, 255), 0);  // Cyan text
-    lv_obj_set_style_bg_color(current_label, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(current_label, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_all(current_label, 5, 0);  // Add more padding
-    lv_obj_set_style_radius(current_label, 4, 0);   // Rounded corners
-    
-    // Position the label on the right side at the current price level
-    lv_obj_align(current_label, LV_ALIGN_TOP_RIGHT, -5, y_current - 10);
 }
 
 static void draw_price_gridlines(lv_obj_t *parent, float min_price, float max_price) {
-    lv_coord_t chart_width = lv_obj_get_width(parent);
+    // Calculate chart width excluding the info panel
+    lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
     lv_coord_t chart_height = lv_obj_get_height(parent);
     
     // Find the first whole dollar above min_price
@@ -267,19 +264,120 @@ static void draw_price_gridlines(lv_obj_t *parent, float min_price, float max_pr
         lv_obj_set_style_bg_opa(grid_line, LV_OPA_50, 0); // Semi-transparent
         lv_obj_set_style_border_width(grid_line, 0, 0);
         lv_obj_align(grid_line, LV_ALIGN_TOP_LEFT, 0, y_pos);
-        
-        // Optionally add price labels on the right side
-        // Uncomment if you want small price labels on each line
-        /*
-        lv_obj_t *price_label = lv_label_create(parent);
-        char price_str[8];
-        snprintf(price_str, sizeof(price_str), "%.0f", price);
-        lv_label_set_text(price_label, price_str);
-        lv_obj_set_style_text_color(price_label, grid_color, 0);
-        lv_obj_set_style_text_font(price_label, &lv_font_montserrat_12, 0); // Use smaller font
-        lv_obj_align(price_label, LV_ALIGN_TOP_RIGHT, -2, y_pos - 5);
-        */
     }
+}
+
+static lv_obj_t* find_obj_by_id(lv_obj_t *parent, uint32_t id) {
+    uint32_t child_cnt = lv_obj_get_child_cnt(parent);
+    for (uint32_t i = 0; i < child_cnt; i++) {
+        lv_obj_t *child = lv_obj_get_child(parent, i);
+        if (child != NULL) {
+            uint32_t child_id = (uint32_t)lv_obj_get_user_data(child);
+            if (child_id == id) {
+                return child;
+            }
+        }
+    }
+    return NULL;
+}
+
+
+static void create_info_panel(lv_obj_t *parent, const char *symbol, float current_price, float min_price, float max_price) {
+    // Calculate dimensions
+    lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
+    lv_coord_t chart_height = lv_obj_get_height(parent);
+    
+    // Find if the info panel already exists
+    lv_obj_t *info_panel = find_obj_by_id(parent, INFO_PANEL_ID);
+    
+    // Create the panel if it doesn't exist
+    if (info_panel == NULL) {
+        info_panel = lv_obj_create(parent);
+        lv_obj_set_size(info_panel, INFO_PANEL_WIDTH, chart_height);
+        lv_obj_align(info_panel, LV_ALIGN_TOP_RIGHT, 0, 0);
+        lv_obj_set_style_bg_color(info_panel, lv_color_black(), 0);
+        lv_obj_set_style_bg_opa(info_panel, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(info_panel, 0, 0);
+        lv_obj_set_user_data(info_panel, (void*)INFO_PANEL_ID);  // Set ID for identification
+        
+        // Create labels inside the panel
+        lv_obj_t *symbol_label = lv_label_create(info_panel);
+        lv_label_set_text(symbol_label, symbol);
+        lv_obj_align(symbol_label, LV_ALIGN_TOP_MID, 0, 10);
+        lv_obj_set_style_text_color(symbol_label, lv_color_white(), 0);
+        lv_obj_set_style_text_font(symbol_label, &lv_font_montserrat_16, 0);
+        lv_obj_set_user_data(symbol_label, (void*)SYMBOL_LABEL_ID);
+        
+        // Current price label
+        lv_obj_t *price_label = lv_label_create(info_panel);
+        char price_buf[16];
+        snprintf(price_buf, sizeof(price_buf), "%.2f", current_price);
+        lv_label_set_text(price_label, price_buf);
+        lv_obj_align(price_label, LV_ALIGN_TOP_MID, 0, 40);
+        lv_obj_set_style_text_color(price_label, lv_color_make(0, 255, 255), 0);
+        // Use a font that exists in your version
+        lv_obj_set_style_text_font(price_label, &lv_font_montserrat_16, 0);
+        lv_obj_set_user_data(price_label, (void*)PRICE_LABEL_ID);
+        
+        // Add high/low labels
+        lv_obj_t *high_label = lv_label_create(info_panel);
+        lv_obj_t *low_label = lv_label_create(info_panel);
+        
+        char high_buf[32], low_buf[32];
+        snprintf(high_buf, sizeof(high_buf), "H: %.2f", max_price);
+        snprintf(low_buf, sizeof(low_buf), "L: %.2f", min_price);
+        
+        lv_label_set_text(high_label, high_buf);
+        lv_label_set_text(low_label, low_buf);
+        
+        lv_obj_align(high_label, LV_ALIGN_TOP_MID, 0, 75);
+        lv_obj_align(low_label, LV_ALIGN_TOP_MID, 0, 95);
+        
+        lv_obj_set_style_text_color(high_label, lv_color_make(0, 255, 0), 0);
+        lv_obj_set_style_text_color(low_label, lv_color_make(255, 0, 0), 0);
+        
+        lv_obj_set_user_data(high_label, (void*)HIGH_LABEL_ID);
+        lv_obj_set_user_data(low_label, (void*)LOW_LABEL_ID);
+    } else {
+        // Update existing labels
+        lv_obj_t *symbol_label = find_obj_by_id(info_panel, SYMBOL_LABEL_ID);
+        if (symbol_label != NULL) {
+            lv_label_set_text(symbol_label, symbol);
+        }
+        
+        lv_obj_t *price_label = find_obj_by_id(info_panel, PRICE_LABEL_ID);
+        if (price_label != NULL) {
+            char price_buf[16];
+            snprintf(price_buf, sizeof(price_buf), "%.2f", current_price);
+            lv_label_set_text(price_label, price_buf);
+        }
+        
+        lv_obj_t *high_label = find_obj_by_id(info_panel, HIGH_LABEL_ID);
+        if (high_label != NULL) {
+            char high_buf[32];
+            snprintf(high_buf, sizeof(high_buf), "H: %.2f", max_price);
+            lv_label_set_text(high_label, high_buf);
+        }
+        
+        lv_obj_t *low_label = find_obj_by_id(info_panel, LOW_LABEL_ID);
+        if (low_label != NULL) {
+            char low_buf[32];
+            snprintf(low_buf, sizeof(low_buf), "L: %.2f", min_price);
+            lv_label_set_text(low_label, low_buf);
+        }
+    }
+    
+    // Calculate y position for current price (for visual reference)
+    int y_current = chart_height * (1.0f - (current_price - min_price) / (max_price - min_price));
+    y_current = constrain(y_current, 0, chart_height);
+    
+    // Create a current price indicator line that extends from the main chart
+    lv_obj_t *price_indicator = lv_obj_create(info_panel);
+    lv_obj_set_size(price_indicator, INFO_PANEL_WIDTH, 2);
+    lv_obj_set_style_bg_color(price_indicator, lv_color_make(0, 255, 255), 0);
+    lv_obj_set_style_bg_opa(price_indicator, LV_OPA_70, 0);
+    lv_obj_set_style_border_width(price_indicator, 0, 0);
+    lv_obj_align(price_indicator, LV_ALIGN_TOP_LEFT, 0, y_current);
 }
 
 void candle_stick_create(lv_obj_t *parent, const char *symbol) {
@@ -287,8 +385,25 @@ void candle_stick_create(lv_obj_t *parent, const char *symbol) {
     if (chart_container == NULL) {
         return;
     }
+    
+    // Get any existing info panel before cleaning
+    lv_obj_t *saved_info_panel = find_obj_by_id(chart_container, INFO_PANEL_ID);
+    
+    // Save the info panel contents if it exists
+    char symbol_text[32] = "";
+    float saved_price = 0.0;
+    float saved_high = 0.0;
+    float saved_low = 0.0;
+    
+    if (saved_info_panel != NULL) {
+        lv_obj_t *symbol_label = find_obj_by_id(saved_info_panel, SYMBOL_LABEL_ID);
+        if (symbol_label != NULL) {
+            strncpy(symbol_text, lv_label_get_text(symbol_label), sizeof(symbol_text) - 1);
+        }
+    }
+    
+    // Now clean the entire container - safer in this version of LVGL
     lv_obj_clean(chart_container);
-
     lv_obj_set_style_bg_color(chart_container, lv_color_black(), 0);
 
     float min_price, max_price;
@@ -312,10 +427,13 @@ void candle_stick_create(lv_obj_t *parent, const char *symbol) {
                          draw_min, draw_max);
     }
 
-    // Always draw current price line since we're maintaining the current_price
+    // Draw current price line
     draw_current_price_line(chart_container, current_price, draw_min, draw_max);
+    
+    // Create or update the info panel
+    create_info_panel(chart_container, symbol, current_price, min_price, max_price);
 
-    // Add price labels
+    // Add price labels on the left
     char min_price_str[16], max_price_str[16];
     snprintf(min_price_str, sizeof(min_price_str), "%.2f", min_price);
     snprintf(max_price_str, sizeof(max_price_str), "%.2f", max_price);

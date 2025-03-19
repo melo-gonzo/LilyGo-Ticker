@@ -1,6 +1,8 @@
 #include "ui.h"
 #include "lvgl.h"
 
+#define INFO_PANEL_WIDTH 80  // Same as in CandleStick.cpp
+
 void ui_chart_screen_init(void)
 {
     ui_chart = lv_obj_create(NULL);
@@ -18,6 +20,14 @@ void ui_chart_screen_init(void)
     
     // Remove padding to use full screen
     lv_obj_set_style_pad_all(chart_container, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    
+    // Add a vertical divider line where the info panel will begin
+    lv_obj_t *divider = lv_obj_create(chart_container);
+    lv_obj_set_size(divider, 1, screen_height);
+    lv_obj_set_style_bg_color(divider, lv_color_make(100, 100, 100), 0); // Light gray
+    lv_obj_set_style_bg_opa(divider, LV_OPA_70, 0);
+    lv_obj_set_style_border_width(divider, 0, 0);
+    lv_obj_align(divider, LV_ALIGN_TOP_RIGHT, -INFO_PANEL_WIDTH, 0); // Position at INFO_PANEL_WIDTH from right
 
     // Store the chart container in a custom attribute of ui_chart for easy access
     lv_obj_set_user_data(ui_chart, chart_container);

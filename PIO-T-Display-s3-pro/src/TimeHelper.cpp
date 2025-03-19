@@ -6,6 +6,14 @@
 
 static bool ntpSyncCompleted = false;
 
+#define INFO_PANEL_ID 0x1001
+#define SYMBOL_LABEL_ID 0x1002
+#define PRICE_LABEL_ID 0x1003
+#define HIGH_LABEL_ID 0x1004
+#define LOW_LABEL_ID 0x1005
+#define TIME_LABEL_ID 0x1006
+#define DATE_LABEL_ID 0x1007
+
 void initiateNTPTimeSync() {
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
     setenv("TZ", TIME_ZONE, 1);
@@ -32,6 +40,23 @@ bool isTimeSynchronized() {
     return ntpSyncCompleted;
 }
 
+
+
+// Find an object with specific ID in a container - same as in CandleStick.cpp
+static lv_obj_t* find_obj_by_id(lv_obj_t *parent, uint32_t id) {
+    uint32_t child_cnt = lv_obj_get_child_cnt(parent);
+    for (uint32_t i = 0; i < child_cnt; i++) {
+        lv_obj_t *child = lv_obj_get_child(parent, i);
+        if (child != NULL) {
+            uint32_t child_id = (uint32_t)lv_obj_get_user_data(child);
+            if (child_id == id) {
+                return child;
+            }
+        }
+    }
+    return NULL;
+}
+
 void updateTimeAndDate() {
     if (!ntpSyncCompleted) {
         return;
@@ -46,12 +71,37 @@ void updateTimeAndDate() {
 
     char dateStr[11];
     strftime(dateStr, sizeof(dateStr), "%Y-%m-%d", &timeinfo);
-
-    // Update time label on the chart screen
-    lv_obj_t *time_label = lv_obj_get_child(ui_chart, 0);
-    if (time_label == NULL) {
-        time_label = lv_label_create(ui_chart);
-        lv_obj_align(time_label, LV_ALIGN_TOP_RIGHT, -10, 10);
+    
+    // Check if we have an info panel on the chart screen
+    lv_obj_t *chart_container = (lv_obj_t *)lv_obj_get_user_data(ui_chart);
+    if (chart_container != NULL) {
+        // Find the info panel by its ID
+        lv_obj_t *info_panel = find_obj_by_id(chart_container, INFO_PANEL_ID);
+        
+        if (info_panel != NULL) {
+            // Find time and date labels by their IDs
+            lv_obj_t *time_label = find_obj_by_id(info_panel, TIME_LABEL_ID);
+            lv_obj_t *date_label = find_obj_by_id(info_panel, DATE_LABEL_ID);
+            
+            // Create time label if it doesn't exist
+            if (time_label == NULL) {
+                time_label = lv_label_create(info_panel);
+                lv_obj_set_user_data(time_label, (void*)TIME_LABEL_ID);
+                lv_obj_set_style_text_color(time_label, lv_color_white(), 0);
+                lv_obj_align(time_label, LV_ALIGN_BOTTOM_MID, 0, -30);
+            }
+            
+            // Create date label if it doesn't exist
+            if (date_label == NULL) {
+                date_label = lv_label_create(info_panel);
+                lv_obj_set_user_data(date_label, (void*)DATE_LABEL_ID);
+                lv_obj_set_style_text_color(date_label, lv_color_white(), 0);
+                lv_obj_align(date_label, LV_ALIGN_BOTTOM_MID, 0, -10);
+            }
+            
+            // Update the labels
+            lv_label_set_text(time_label, timeStr);
+            lv_label_set_text(date_label, dateStr);
+        }
     }
-    lv_label_set_text_fmt(time_label, "%s\n%s", dateStr, timeStr);
 }
