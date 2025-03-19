@@ -18,5 +18,6 @@ bool fetch_intraday_data(const char *symbol);
 void candle_stick_create(lv_obj_t *parent, const char *symbol);
 void update_intraday_data(const char *symbol);
 void set_intraday_parameters(int update_interval, int collection_duration);
+void initialize_test_data();  
 
 #endif // CANDLESTICK_H
