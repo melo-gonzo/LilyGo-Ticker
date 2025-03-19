@@ -38,6 +38,12 @@ void setup() {
     } else {
         set_intraday_parameters(INTRADAY_UPDATE_INTERVAL, CANDLE_COLLECTION_DURATION);
     }
+    if (USE_TEST_DATA) {
+        set_intraday_parameters(INTRADAY_UPDATE_INTERVAL, CANDLE_COLLECTION_DURATION);
+        initialize_test_data();  // Initialize with historical test data
+    } else {
+        set_intraday_parameters(INTRADAY_UPDATE_INTERVAL, CANDLE_COLLECTION_DURATION);
+    }
 
     if (isProvisioned()) {
         WiFi.begin();

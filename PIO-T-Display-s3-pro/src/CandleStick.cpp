@@ -30,13 +30,63 @@ static float current_price = 0.0;  // Added to store current price
 
 
 static float getRandomPrice() {
-    static float lastPrice = 50.0; // Start at 50
+    static float lastPrice = 250.0; // Start at 50
     float change = (random(-100, 101) / 100.0) * 2; // Random change between -2 and 2
     lastPrice += change;
     lastPrice = max(0.0f, lastPrice); // Ensure price doesn't go negative
     current_price = lastPrice; // Update current price with random value
     return lastPrice;
 }
+
+void initialize_test_data() {
+    if (!USE_TEST_DATA) {
+        return;  // Only use for test data mode
+    }
+    
+    // Start with a reasonable base price
+    float base_price = 250.0;
+    
+    // Get the current time
+    time_t now;
+    time(&now);
+    
+    // Reset the candle buffer
+    num_candles = 0;
+    newest_candle_index = -1;
+    
+    // Pre-populate with historical data
+    // We'll create MAX_CANDLES - 5 historical candles, leaving room for 5 new ones
+    for (int i = 0; i < MAX_CANDLES - 5; i++) {
+        // Create some random price movement
+        float open = base_price + (random(-100, 101) / 100.0) * 2;
+        float close = open + (random(-100, 101) / 100.0) * 1.5;
+        float high = max(open, close) + (random(0, 51) / 100.0);
+        float low = min(open, close) - (random(0, 51) / 100.0);
+        
+        // Move the base price to create a trend
+        base_price = close;
+        
+        // Calculate timestamp for this candle
+        // Each candle is one collection duration in the past
+        time_t candle_time = now - (MAX_CANDLES - 5 - i) * CANDLE_COLLECTION_DURATION;
+        
+        // Add to the circular buffer
+        newest_candle_index = (newest_candle_index + 1) % MAX_CANDLES;
+        num_candles++;
+        
+        candles[newest_candle_index].open = open;
+        candles[newest_candle_index].close = close;
+        candles[newest_candle_index].high = high;
+        candles[newest_candle_index].low = low;
+        timestamps[newest_candle_index] = candle_time;
+    }
+    
+    // Set current price to the last close price
+    current_price = candles[newest_candle_index].close;
+    
+    Serial.println("Test data initialized with " + String(num_candles) + " candles");
+}
+
 
 static void update_circular_buffer(float currentPrice, time_t now) {
     if (num_candles < MAX_CANDLES) {
@@ -372,12 +422,12 @@ static void create_info_panel(lv_obj_t *parent, const char *symbol, float curren
     y_current = constrain(y_current, 0, chart_height);
     
     // Create a current price indicator line that extends from the main chart
-    lv_obj_t *price_indicator = lv_obj_create(info_panel);
-    lv_obj_set_size(price_indicator, INFO_PANEL_WIDTH, 2);
-    lv_obj_set_style_bg_color(price_indicator, lv_color_make(0, 255, 255), 0);
-    lv_obj_set_style_bg_opa(price_indicator, LV_OPA_70, 0);
-    lv_obj_set_style_border_width(price_indicator, 0, 0);
-    lv_obj_align(price_indicator, LV_ALIGN_TOP_LEFT, 0, y_current);
+    // lv_obj_t *price_indicator = lv_obj_create(info_panel);
+    // lv_obj_set_size(price_indicator, INFO_PANEL_WIDTH, 2);
+    // lv_obj_set_style_bg_color(price_indicator, lv_color_make(0, 255, 255), 0);
+    // lv_obj_set_style_bg_opa(price_indicator, LV_OPA_70, 0);
+    // lv_obj_set_style_border_width(price_indicator, 0, 0);
+    // lv_obj_align(price_indicator, LV_ALIGN_TOP_LEFT, 0, y_current);
 }
 
 void candle_stick_create(lv_obj_t *parent, const char *symbol) {
