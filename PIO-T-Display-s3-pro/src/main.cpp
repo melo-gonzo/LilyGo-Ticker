@@ -8,6 +8,7 @@
 #include "WiFiProvHelper.h"
 #include "DebugOverlay.h"
 #include "config.h"
+#include "market_hours.h"
 
 
 LilyGo_Class amoled;
@@ -99,7 +100,8 @@ void loop() {
     if (millis() - lastStockUpdate > (USE_INTRADAY_DATA ? INTRADAY_UPDATE_INTERVAL * 1000 : 12000)) {
         if (USE_INTRADAY_DATA) {
             update_intraday_data(STOCK_SYMBOL);
-        } else {
+        } else if (USE_TEST_DATA || StockTracker::MarketHoursChecker::isMarketOpen()) {
+            // Only fetch daily data if market is open or using test data
             if (fetch_candle_data(STOCK_SYMBOL)) {
                 candle_stick_create(ui_chart, STOCK_SYMBOL);
             }

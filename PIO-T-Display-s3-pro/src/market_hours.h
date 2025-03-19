@@ -1,18 +1,23 @@
-// market_hours.h
+// market_hours.h simplified version
 #pragma once
 
 #include <time.h>
-#include "config.h"
+#include "config.h"  // For USE_TEST_DATA
 
 namespace StockTracker {
+
+// Market hours definitions (PST)
+const int MARKET_OPEN_HOUR = 6;    // 6:30 AM PST
+const int MARKET_OPEN_MINUTE = 30;
+const int MARKET_CLOSE_HOUR = 13;  // 1:00 PM PST
+const int MARKET_CLOSE_MINUTE = 0;
+const bool ENFORCE_HOURS = true;   // Set to false to bypass hour checks
 
 class MarketHoursChecker {
 public:
     static bool isMarketOpen() {
-        const auto& config = Config::getInstance();
-        
-        // If using test data or market hours are not enforced, always return true
-        if (config.stock.useTestData || !config.stock.marketHours.enforceHours) {
+        // If using test data or market hours enforcement is disabled, always return true
+        if (USE_TEST_DATA || !ENFORCE_MARKET_HOURS) {
             return true;
         }
 
@@ -30,30 +35,26 @@ public:
         int currentMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
 
         // Convert market hours to minutes since midnight
-        const auto& market = config.stock.marketHours;
-        int marketStartMinutes = market.startHour * 60 + market.startMinute;
-        int marketEndMinutes = market.endHour * 60 + market.endMinute;
+        int marketStartMinutes = MARKET_OPEN_HOUR * 60 + MARKET_OPEN_MINUTE;
+        int marketEndMinutes = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE;
 
         return currentMinutes >= marketStartMinutes && currentMinutes < marketEndMinutes;
     }
 
     static std::string getNextMarketOpen() {
-        const auto& config = Config::getInstance();
-        const auto& market = config.stock.marketHours;
-
         time_t now;
         time(&now);
         struct tm timeinfo;
         localtime_r(&now, &timeinfo);
 
         // Set time to next market open
-        timeinfo.tm_hour = market.startHour;
-        timeinfo.tm_min = market.startMinute;
+        timeinfo.tm_hour = MARKET_OPEN_HOUR;
+        timeinfo.tm_min = MARKET_OPEN_MINUTE;
         timeinfo.tm_sec = 0;
 
         // If we're past today's market open, move to next day
         if (!isMarketOpen() && timeinfo.tm_hour * 60 + timeinfo.tm_min < 
-            market.endHour * 60 + market.endMinute) {
+            MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE) {
             timeinfo.tm_mday += 1;
         }
 

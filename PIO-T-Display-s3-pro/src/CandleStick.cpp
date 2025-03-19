@@ -6,6 +6,7 @@
 #include "ui.h"
 #include "TimeHelper.h"
 #include "config.h"
+#include "market_hours.h"
 
 #define CANDLE_PADDING 0
 #define INFO_PANEL_WIDTH 80  // Width in pixels for the right side info panel
@@ -30,7 +31,7 @@ static float current_price = 0.0;  // Added to store current price
 
 
 static float getRandomPrice() {
-    static float lastPrice = 250.0; // Start at 50
+    static float lastPrice = 250.0; // Start at 250
     float change = (random(-100, 101) / 100.0) * 2; // Random change between -2 and 2
     lastPrice += change;
     lastPrice = max(0.0f, lastPrice); // Ensure price doesn't go negative
@@ -504,7 +505,36 @@ void candle_stick_create(lv_obj_t *parent, const char *symbol) {
 }
 
 void update_intraday_data(const char *symbol) {
+    static bool displayed_closed_message = false;
+    
     if (USE_INTRADAY_DATA) {
+        // Only check market hours for real data
+        if (!USE_TEST_DATA && !StockTracker::MarketHoursChecker::isMarketOpen()) {
+            // Display market closed message if not already displayed
+            if (!displayed_closed_message) {
+                // Get the chart container
+                lv_obj_t *chart_container = (lv_obj_t *)lv_obj_get_user_data(ui_chart);
+                if (chart_container != NULL) {
+                    // Create market closed message
+                    lv_obj_t *closed_msg = lv_label_create(chart_container);
+                    std::string nextOpen = StockTracker::MarketHoursChecker::getNextMarketOpen();
+                    lv_label_set_text_fmt(closed_msg, "Market Closed\nNext Open: %s", nextOpen.c_str());
+                    lv_obj_align(closed_msg, LV_ALIGN_CENTER, 0, 0);
+                    lv_obj_set_style_text_color(closed_msg, lv_color_make(255, 100, 100), 0);  // Light red
+                    lv_obj_set_style_text_align(closed_msg, LV_TEXT_ALIGN_CENTER, 0);
+                    
+                    displayed_closed_message = true;
+                }
+            }
+            return;  // Don't fetch data when market is closed
+        }
+        
+        // Reset the flag if the market is open
+        if (StockTracker::MarketHoursChecker::isMarketOpen()) {
+            displayed_closed_message = false;
+        }
+        
+        // Continue with normal data fetching
         fetch_intraday_data(symbol);
         candle_stick_create(ui_chart, symbol);
     }

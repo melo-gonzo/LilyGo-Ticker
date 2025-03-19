@@ -1,26 +1,30 @@
 #include "config.h"
 
 
-// Intraday with real data
-// bool USE_TEST_DATA = false;
-// bool USE_INTRADAY_DATA = true;
-// int INTRADAY_UPDATE_INTERVAL = 5; // 5
-// int CANDLE_COLLECTION_DURATION = 180; // 60
-// const char* STOCK_SYMBOL = "SPY";
+//// Intraday with real data
+bool USE_TEST_DATA = false;
+bool USE_INTRADAY_DATA = true;
+int INTRADAY_UPDATE_INTERVAL = 5; // 5
+int CANDLE_COLLECTION_DURATION = 180; // 60
+const char* STOCK_SYMBOL = "SPY";
+bool ENFORCE_MARKET_HOURS = true;  // Default to enforcing market hours
 
 //// Test intraday with fake data
-bool USE_TEST_DATA = true;
-bool USE_INTRADAY_DATA = true;
-int INTRADAY_UPDATE_INTERVAL = 1; // 5 // 1 
-int CANDLE_COLLECTION_DURATION = 6; // 60 // 6
-const char* STOCK_SYMBOL = "SPY";
+// bool USE_TEST_DATA = true;
+// bool USE_INTRADAY_DATA = true;
+// int INTRADAY_UPDATE_INTERVAL = 1; // 5 // 1 
+// int CANDLE_COLLECTION_DURATION = 6; // 60 // 6
+// const char* STOCK_SYMBOL = "SPY";
+// bool ENFORCE_MARKET_HOURS = false;  
 
-// Daily data
+//// Daily data
 // bool USE_TEST_DATA = false;
 // bool USE_INTRADAY_DATA = false;
 // int INTRADAY_UPDATE_INTERVAL = 5; // 5
 // int CANDLE_COLLECTION_DURATION = 60; // 60
 // const char* STOCK_SYMBOL = "SPY";
+// bool ENFORCE_MARKET_HOURS = true;  
+
 
 
 void loadConfig() {

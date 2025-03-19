@@ -13,6 +13,7 @@ extern bool USE_INTRADAY_DATA;
 extern int INTRADAY_UPDATE_INTERVAL;
 extern int CANDLE_COLLECTION_DURATION;
 extern const char* STOCK_SYMBOL;
+extern bool ENFORCE_MARKET_HOURS;
 
 // Function to load configuration
 void loadConfig();
