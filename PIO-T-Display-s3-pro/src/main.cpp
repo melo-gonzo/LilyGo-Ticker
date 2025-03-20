@@ -36,11 +36,6 @@ void setup() {
 
     if (USE_TEST_DATA) {
         set_intraday_parameters(INTRADAY_UPDATE_INTERVAL, CANDLE_COLLECTION_DURATION);
-    } else {
-        set_intraday_parameters(INTRADAY_UPDATE_INTERVAL, CANDLE_COLLECTION_DURATION);
-    }
-    if (USE_TEST_DATA) {
-        set_intraday_parameters(INTRADAY_UPDATE_INTERVAL, CANDLE_COLLECTION_DURATION);
         initialize_test_data();  // Initialize with historical test data
     } else {
         set_intraday_parameters(INTRADAY_UPDATE_INTERVAL, CANDLE_COLLECTION_DURATION);
@@ -88,13 +83,7 @@ void loop() {
     lv_task_handler();
     delay(5);
 
-    // Update time more frequently to ensure it's displayed correctly
-    static unsigned long lastTimeUpdate = 0;
-    if (millis() - lastTimeUpdate > 1000) {
-        updateTimeAndDate();
-        lastTimeUpdate = millis();
-    }
-
+    // Handle reset button
     if (digitalRead(resetPin) == LOW) {
         if (!resetButtonState) {
             resetButtonState = true;
@@ -106,6 +95,14 @@ void loop() {
         resetButtonState = false;
     }
 
+    // Create a dedicated time update loop - only update the labels, not redraw the chart
+    static unsigned long lastTimeOnlyUpdate = 0;
+    if (millis() - lastTimeOnlyUpdate > 1000) {  // Update every second
+        updateTimeAndDate();  // Using our improved version that only changes text when needed
+        lastTimeOnlyUpdate = millis();
+    }
+
+    // Separate stock chart update loop - don't mix with time updates
     static unsigned long lastStockUpdate = 0;
     unsigned long updateInterval = USE_INTRADAY_DATA ? 
                                   (INTRADAY_UPDATE_INTERVAL * 1000) : 
@@ -113,7 +110,7 @@ void loop() {
 
     if (millis() - lastStockUpdate > updateInterval) {
         if (USE_INTRADAY_DATA) {
-            update_intraday_data(STOCK_SYMBOL);
+            update_intraday_data(STOCK_SYMBOL); // This calls candle_stick_create
         } else {
             // Always fetch daily data, regardless of market hours
             if (fetch_candle_data(STOCK_SYMBOL)) {

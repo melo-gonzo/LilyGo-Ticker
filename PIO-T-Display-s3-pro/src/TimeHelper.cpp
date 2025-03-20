@@ -78,15 +78,22 @@ void updateTimeAndDate() {
         return;
     }
 
-    time_t now = time(nullptr);
-    struct tm timeinfo;
-    localtime_r(&now, &timeinfo);
-
-    char timeStr[9];
-    strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
-
-    char dateStr[11];
-    strftime(dateStr, sizeof(dateStr), "%Y-%m-%d", &timeinfo);
+    // Only update time strings every second
+    static unsigned long lastTimeStringUpdate = 0;
+    static char timeStr[9] = "00:00:00";
+    static char dateStr[11] = "0000-00-00";
+    
+    // Update the time strings once per second
+    if (millis() - lastTimeStringUpdate > 1000) {
+        time_t now = time(nullptr);
+        struct tm timeinfo;
+        localtime_r(&now, &timeinfo);
+        
+        strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
+        strftime(dateStr, sizeof(dateStr), "%Y-%m-%d", &timeinfo);
+        
+        lastTimeStringUpdate = millis();
+    }
     
     // Check if we have an info panel on the chart screen
     lv_obj_t *chart_container = (lv_obj_t *)lv_obj_get_user_data(ui_chart);
@@ -115,9 +122,17 @@ void updateTimeAndDate() {
                 lv_obj_align(date_label, LV_ALIGN_BOTTOM_MID, 0, -10);
             }
             
-            // Update the labels with the current time and date
-            lv_label_set_text(time_label, timeStr);
-            lv_label_set_text(date_label, dateStr);
+            // Check if text has changed before updating to avoid flicker
+            const char* current_time_text = lv_label_get_text(time_label);
+            const char* current_date_text = lv_label_get_text(date_label);
+            
+            if (strcmp(current_time_text, timeStr) != 0) {
+                lv_label_set_text(time_label, timeStr);
+            }
+            
+            if (strcmp(current_date_text, dateStr) != 0) {
+                lv_label_set_text(date_label, dateStr);
+            }
         }
     }
 }

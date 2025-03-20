@@ -333,6 +333,7 @@ static lv_obj_t* find_obj_by_id(lv_obj_t *parent, uint32_t id) {
 }
 
 
+// Create info panel function - this should be a standalone function
 static void create_info_panel(lv_obj_t *parent, const char *symbol, float current_price, float min_price, float max_price) {
     // Calculate dimensions
     lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
@@ -417,19 +418,13 @@ static void create_info_panel(lv_obj_t *parent, const char *symbol, float curren
             lv_label_set_text(low_label, low_buf);
         }
     }
-    
     // Calculate y position for current price (for visual reference)
     int y_current = chart_height * (1.0f - (current_price - min_price) / (max_price - min_price));
     y_current = constrain(y_current, 0, chart_height);
     
-    // Create a current price indicator line that extends from the main chart
-    // lv_obj_t *price_indicator = lv_obj_create(info_panel);
-    // lv_obj_set_size(price_indicator, INFO_PANEL_WIDTH, 2);
-    // lv_obj_set_style_bg_color(price_indicator, lv_color_make(0, 255, 255), 0);
-    // lv_obj_set_style_bg_opa(price_indicator, LV_OPA_70, 0);
-    // lv_obj_set_style_border_width(price_indicator, 0, 0);
-    // lv_obj_align(price_indicator, LV_ALIGN_TOP_LEFT, 0, y_current);
 }
+
+
 
 void candle_stick_create(lv_obj_t *parent, const char *symbol) {
     lv_obj_t *chart_container = (lv_obj_t *)lv_obj_get_user_data(parent);
@@ -437,10 +432,26 @@ void candle_stick_create(lv_obj_t *parent, const char *symbol) {
         return;
     }
     
-    // Get any existing info panel before cleaning
+    // Save time and date labels text before cleaning
     lv_obj_t *saved_info_panel = find_obj_by_id(chart_container, INFO_PANEL_ID);
+    char time_text[16] = "";
+    char date_text[16] = "";
     
-    // Save the info panel contents if it exists
+    if (saved_info_panel != NULL) {
+        lv_obj_t *time_label = find_obj_by_id(saved_info_panel, TIME_LABEL_ID);
+        lv_obj_t *date_label = find_obj_by_id(saved_info_panel, DATE_LABEL_ID);
+        
+        // Save the text content instead of the object pointers
+        if (time_label != NULL) {
+            strncpy(time_text, lv_label_get_text(time_label), sizeof(time_text) - 1);
+        }
+        
+        if (date_label != NULL) {
+            strncpy(date_text, lv_label_get_text(date_label), sizeof(date_text) - 1);
+        }
+    }
+    
+    // Get any existing info panel before cleaning
     char symbol_text[32] = "";
     float saved_price = 0.0;
     float saved_high = 0.0;
@@ -453,7 +464,7 @@ void candle_stick_create(lv_obj_t *parent, const char *symbol) {
         }
     }
     
-    // Now clean the entire container - safer in this version of LVGL
+    // Now clean the entire container
     lv_obj_clean(chart_container);
     lv_obj_set_style_bg_color(chart_container, lv_color_black(), 0);
 
@@ -483,6 +494,28 @@ void candle_stick_create(lv_obj_t *parent, const char *symbol) {
     
     // Create or update the info panel
     create_info_panel(chart_container, symbol, current_price, min_price, max_price);
+    
+    // Recreate time and date labels with saved text
+    lv_obj_t *new_info_panel = find_obj_by_id(chart_container, INFO_PANEL_ID);
+    if (new_info_panel != NULL) {
+        // Recreate time label with saved text if it existed
+        if (time_text[0] != '\0') {
+            lv_obj_t *new_time_label = lv_label_create(new_info_panel);
+            lv_label_set_text(new_time_label, time_text);
+            lv_obj_align(new_time_label, LV_ALIGN_BOTTOM_MID, 0, -30);
+            lv_obj_set_style_text_color(new_time_label, lv_color_white(), 0);
+            lv_obj_set_user_data(new_time_label, (void*)TIME_LABEL_ID);
+        }
+        
+        // Recreate date label with saved text if it existed
+        if (date_text[0] != '\0') {
+            lv_obj_t *new_date_label = lv_label_create(new_info_panel);
+            lv_label_set_text(new_date_label, date_text);
+            lv_obj_align(new_date_label, LV_ALIGN_BOTTOM_MID, 0, -10);
+            lv_obj_set_style_text_color(new_date_label, lv_color_white(), 0);
+            lv_obj_set_user_data(new_date_label, (void*)DATE_LABEL_ID);
+        }
+    }
 
     // Add price labels on the left
     char min_price_str[16], max_price_str[16];
@@ -514,6 +547,7 @@ void update_intraday_data(const char *symbol) {
         
         // Only fetch new data when market is open
         if (is_market_open) {
+            // Fetch data only when market is open
             fetch_intraday_data(symbol);
         }
         
