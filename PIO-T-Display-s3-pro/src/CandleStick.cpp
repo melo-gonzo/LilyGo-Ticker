@@ -512,10 +512,12 @@ void update_intraday_data(const char *symbol) {
         bool is_market_open = USE_TEST_DATA || !ENFORCE_MARKET_HOURS || 
                              StockTracker::MarketHoursChecker::isMarketOpen();
         
-        // Fetch data regardless of market hours
-        fetch_intraday_data(symbol);
+        // Only fetch new data when market is open
+        if (is_market_open) {
+            fetch_intraday_data(symbol);
+        }
         
-        // Create chart with data
+        // Create chart with existing data
         candle_stick_create(ui_chart, symbol);
         
         // Get the chart container
