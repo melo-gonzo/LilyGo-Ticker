@@ -19,6 +19,8 @@ def extract_contents(folders, output_file, ignore_folders):
                 ]
 
                 for filename in filenames:
+                    if "credentials" in filename:
+                        continue
                     file_path = os.path.join(dirpath, filename)
                     try:
                         with open(file_path, "r", encoding="utf-8") as infile:
@@ -33,7 +35,7 @@ def extract_contents(folders, output_file, ignore_folders):
 
 # Usage
 if __name__ == "__main__":
-    folders_to_process = ["./src", "PIOFolder", "./lib/ui"]
+    folders_to_process = ["./src", "PIOFolder"]#, "./lib/ui"]
     ignore_folders = ["./src/temp"]
     output_file = "output.txt"
 
