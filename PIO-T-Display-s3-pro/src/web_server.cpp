@@ -95,6 +95,29 @@ button:hover{background:#0056b3}
 .success{background:#d4edda;color:#155724;border:1px solid #c3e6cb}
 .error{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}
 .network-note{background:#e3f2fd;padding:10px;border-radius:4px;margin-top:10px;font-size:14px;color:#1565c0}
+.symbol-input{text-transform:uppercase}
+.symbol-help{font-size:12px;color:#666;margin-top:5px}
+.popular-symbols{margin-top:10px}
+.symbol-button{background:#f8f9fa;border:1px solid #dee2e6;color:#495057;padding:4px 8px;margin:2px;border-radius:3px;cursor:pointer;display:inline-block;font-size:12px}
+.symbol-button:hover{background:#e9ecef}
+.form-group input[type="number"]:invalid,
+.form-group input[type="number"].invalid {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
+.form-group input[type="number"]:valid,
+.form-group input[type="number"].valid {
+    border-color: #28a745 !important;
+}
+.bars-limitation-info {
+    background: #e3f2fd;
+    border: 1px solid #90caf9;
+    border-radius: 4px;
+    padding: 10px;
+    margin-top: 10px;
+    font-size: 12px;
+    color: #1565c0;
+}
 </style>
 </head>
 <body>
@@ -104,8 +127,23 @@ button:hover{background:#0056b3}
 
 <h2>Stock Configuration</h2>
 <div class="form-group">
-<label>Symbol:</label>
-<select id="symbol"><option>SPY</option><option>QQQ</option><option>NVDA</option><option>AAPL</option><option>MSFT</option></select>
+<label>Stock Symbol:</label>
+<input type="text" id="symbol" class="symbol-input" maxlength="6" placeholder="Enter symbol (e.g., AAPL)">
+<div class="symbol-help">Enter up to 6 characters. Symbol will be automatically capitalized.</div>
+<div class="popular-symbols">
+<strong>Popular symbols:</strong><br>
+<span class="symbol-button" onclick="setSymbol('SPY')">SPY</span>
+<span class="symbol-button" onclick="setSymbol('QQQ')">QQQ</span>
+<span class="symbol-button" onclick="setSymbol('NVDA')">NVDA</span>
+<span class="symbol-button" onclick="setSymbol('AAPL')">AAPL</span>
+<span class="symbol-button" onclick="setSymbol('MSFT')">MSFT</span>
+<span class="symbol-button" onclick="setSymbol('GOOGL')">GOOGL</span>
+<span class="symbol-button" onclick="setSymbol('AMZN')">AMZN</span>
+<span class="symbol-button" onclick="setSymbol('TSLA')">TSLA</span>
+<span class="symbol-button" onclick="setSymbol('META')">META</span>
+<span class="symbol-button" onclick="setSymbol('BTC-USD')">BTC-USD</span>
+<span class="symbol-button" onclick="setSymbol('ETH-USD')">ETH-USD</span>
+</div>
 </div>
 <div class="form-row">
 <div class="form-group">
@@ -131,8 +169,13 @@ button:hover{background:#0056b3}
 </div>
 <div class="form-group">
 <label>Bars to Show:</label>
-<input type="number" id="barsToShow" min="1" value="50">
-<small id="barsHelpText" style="color:#666;font-size:12px;">Max bars depends on screen resolution</small>
+<input type="number" id="barsToShow" min="1" value="50" style="transition: border-color 0.3s;">
+<div id="barsHelpText" style="color:#666;font-size:12px;margin-top:5px;white-space:pre-line;">
+Max bars depends on screen resolution and data buffer
+</div>
+<div id="barsWarning" style="color:#856404;background:#fff3cd;border:1px solid #ffeaa7;padding:8px;border-radius:4px;margin-top:5px;display:none;font-size:12px;">
+<strong>Note:</strong> The actual number of bars displayed may be limited by available data.
+</div>
 </div>
 
 <h2>Data Options</h2>
@@ -189,9 +232,43 @@ button:hover{background:#0056b3}
 <script>
 document.addEventListener('DOMContentLoaded', loadConfig);
 
+// Auto-capitalize and limit symbol input
+document.getElementById('symbol').addEventListener('input', function(e) {
+    let value = e.target.value.toUpperCase();
+    // Remove any non-alphanumeric characters except hyphens (for crypto pairs like BTC-USD)
+    value = value.replace(/[^A-Z0-9-]/g, '');
+    // Limit to 6 characters
+    if (value.length > 6) {
+        value = value.substring(0, 6);
+    }
+    e.target.value = value;
+});
+
+function setSymbol(symbol) {
+    document.getElementById('symbol').value = symbol;
+}
+
 document.getElementById('useStaticIP').addEventListener('change', function() {
     const staticFields = document.getElementById('staticIPFields');
     staticFields.style.display = this.checked ? 'block' : 'none';
+});
+
+// Add input validation for bars field
+document.getElementById('barsToShow').addEventListener('input', function(e) {
+    const value = parseInt(e.target.value);
+    const max = parseInt(e.target.max);
+    const min = parseInt(e.target.min) || 1;
+    
+    if (value > max) {
+        e.target.style.borderColor = '#dc3545';
+        e.target.title = `Maximum allowed: ${max}`;
+    } else if (value < min) {
+        e.target.style.borderColor = '#dc3545';
+        e.target.title = `Minimum allowed: ${min}`;
+    } else {
+        e.target.style.borderColor = '#28a745';
+        e.target.title = '';
+    }
 });
 
 async function loadConfig(){
@@ -204,9 +281,30 @@ document.getElementById('yahooRange').value = config.yahooRange || '1d';
 document.getElementById('updateInterval').value = config.updateInterval || 1;
 document.getElementById('candleDuration').value = config.candleDuration || 180;
 document.getElementById('barsToShow').value = config.barsToShow || 50;
+
+// Update bars validation with more detailed info
 const maxBars = config.maxBars;
+const maxBarsScreen = config.maxBarsScreen || maxBars;
+const maxBarsData = config.maxBarsData || maxBars;
+const screenWidth = config.screenWidth || 'unknown';
+
 document.getElementById('barsToShow').max = maxBars;
-document.getElementById('barsHelpText').textContent = `Max bars: ${maxBars} (based on screen resolution)`;
+
+// Create more informative help text
+let helpText = `Max bars: ${maxBars}`;
+if (maxBarsScreen !== maxBarsData) {
+    const limitation = maxBarsScreen < maxBarsData ? 'screen resolution' : 'data buffer';
+    helpText += ` (limited by ${limitation})`;
+}
+helpText += `\nScreen: ${screenWidth}px, Screen limit: ${maxBarsScreen}, Data limit: ${maxBarsData}`;
+
+document.getElementById('barsHelpText').textContent = helpText;
+
+// Show warning if data buffer is the limiting factor
+if (maxBarsData < maxBarsScreen) {
+    document.getElementById('barsWarning').style.display = 'block';
+}
+
 document.getElementById('useTestData').checked = config.useTestData || false;
 document.getElementById('useIntraday').checked = config.useIntraday !== false;
 document.getElementById('enforceHours').checked = config.enforceHours !== false;
@@ -224,13 +322,37 @@ staticFields.style.display = document.getElementById('useStaticIP').checked ? 'b
 
 document.getElementById('configForm').addEventListener('submit', async function(e){
 e.preventDefault();
+
+// Get and validate symbol
+let symbol = document.getElementById('symbol').value.trim().toUpperCase();
+if (!symbol) {
+    showStatus('Please enter a stock symbol', 'error');
+    return;
+}
+if (symbol.length > 6) {
+    symbol = symbol.substring(0, 6);
+}
+// Basic validation: must contain at least one letter
+if (!/[A-Z]/.test(symbol)) {
+    showStatus('Symbol must contain at least one letter', 'error');
+    return;
+}
+
+// Validate bars to show
+const barsToShow = parseInt(document.getElementById('barsToShow').value);
+const maxBars = parseInt(document.getElementById('barsToShow').max);
+if (barsToShow > maxBars) {
+    showStatus(`Bars to show cannot exceed ${maxBars} (limited by device constraints)`, 'error');
+    return;
+}
+
 const config = {
-symbol: document.getElementById('symbol').value,
+symbol: symbol,
 yahooInterval: document.getElementById('yahooInterval').value,
 yahooRange: document.getElementById('yahooRange').value,
 updateInterval: parseInt(document.getElementById('updateInterval').value),
 candleDuration: parseInt(document.getElementById('candleDuration').value),
-barsToShow: parseInt(document.getElementById('barsToShow').value),
+barsToShow: barsToShow,
 useTestData: document.getElementById('useTestData').checked,
 useIntraday: document.getElementById('useIntraday').checked,
 enforceHours: document.getElementById('enforceHours').checked,
@@ -248,7 +370,12 @@ body: JSON.stringify(config)
 });
 const result = await response.json();
 if(response.ok) {
-    const message = config.useStaticIP ? 'Updated successfully! Device restart required for network changes.' : 'Updated successfully!';
+    let message = 'Updated successfully!';
+    if (config.useStaticIP) {
+        message += ' Device restart required for network changes.';
+    }
+    // Reload config to get updated max bars in case screen resolution changed
+    setTimeout(loadConfig, 1000);
     showStatus(message, 'success');
 } else {
     showStatus('Update failed!', 'error');

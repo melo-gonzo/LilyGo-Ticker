@@ -35,11 +35,6 @@ const char* VALID_RANGES[] = {
 };
 const int VALID_RANGES_COUNT = sizeof(VALID_RANGES) / sizeof(VALID_RANGES[0]);
 
-const char* VALID_SYMBOLS[] = {
-    "SPY", "QQQ", "NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "META", "BTC-USD", "ETH-USD"
-};
-const int VALID_SYMBOLS_COUNT = sizeof(VALID_SYMBOLS) / sizeof(VALID_SYMBOLS[0]);
-
 Preferences preferences;
 
 void loadConfig() {
@@ -118,6 +113,27 @@ void saveConfig() {
     Serial.println("Configuration saved");
 }
 
+bool validateSymbol(const String& symbol) {
+    // Basic validation for stock symbols
+    if (symbol.length() == 0 || symbol.length() > 6) {
+        return false;
+    }
+    
+    // Must contain at least one letter
+    bool hasLetter = false;
+    for (int i = 0; i < symbol.length(); i++) {
+        char c = symbol.charAt(i);
+        if (isalpha(c)) {
+            hasLetter = true;
+        } else if (!isalnum(c) && c != '-') {
+            // Only allow alphanumeric characters and hyphens (for crypto pairs)
+            return false;
+        }
+    }
+    
+    return hasLetter;
+}
+
 bool validateInterval(const String& interval) {
     for (int i = 0; i < VALID_INTERVALS_COUNT; i++) {
         if (interval == VALID_INTERVALS[i]) {
@@ -164,24 +180,24 @@ bool validateIP(const String& ip) {
 int calculateMaxBars(int screenWidth, int panelWidth, int candleMinWidth) {
     int chartWidth = screenWidth - panelWidth;
     
-    // Calculate max bars considering minimum candle width and padding
-    // Formula: chartWidth = (candleWidth * numBars) + (padding * (numBars - 1))
-    // Solving for numBars: numBars = (chartWidth + padding) / (candleWidth + padding)
-    
-    int padding = CANDLE_PADDING; // Use the actual padding from the header
+    // FIXED: Proper calculation that allows 1-pixel candles
     int maxBars;
+    int padding = CANDLE_PADDING;
     
     if (padding == 0) {
-        // Simple case: no padding
+        // Simple case: no padding, just divide available width by minimum candle width
         maxBars = chartWidth / candleMinWidth;
     } else {
         // With padding: solve the equation
+        // chartWidth = (candleWidth * numBars) + (padding * (numBars - 1))
+        // chartWidth = numBars * (candleWidth + padding) - padding
+        // numBars = (chartWidth + padding) / (candleWidth + padding)
         maxBars = (chartWidth + padding) / (candleMinWidth + padding);
     }
     
-    // Ensure reasonable bounds
-    maxBars = max(10, maxBars);  // Minimum of 10 bars
-    maxBars = min(500, maxBars); // Increased maximum to 500 bars for higher resolution displays
+    // FIXED: More reasonable bounds - allow more bars for higher resolution displays
+    maxBars = std::max(5, maxBars);   // Minimum of 5 bars (was 10)
+    maxBars = std::min(1000, maxBars); // Maximum of 1000 bars (was 500)
     
     Serial.println("calculateMaxBars:");
     Serial.println("  Screen width: " + String(screenWidth));
@@ -190,6 +206,16 @@ int calculateMaxBars(int screenWidth, int panelWidth, int candleMinWidth) {
     Serial.println("  Min candle width: " + String(candleMinWidth));
     Serial.println("  Padding: " + String(padding));
     Serial.println("  Calculated max bars: " + String(maxBars));
+    
+    // Additional debug: show what the actual candle width would be
+    int actual_candle_width;
+    if (padding == 0) {
+        actual_candle_width = chartWidth / maxBars;
+    } else {
+        int total_padding_space = (maxBars - 1) * padding;
+        actual_candle_width = (chartWidth - total_padding_space) / maxBars;
+    }
+    Serial.println("  Actual candle width at max bars: " + String(actual_candle_width));
     
     return maxBars;
 }
@@ -215,10 +241,16 @@ String getConfigJSON() {
     doc["yahooRange"] = YAHOO_RANGE;
     doc["barsToShow"] = BARS_TO_SHOW;
     
-    // Use actual screen width instead of hardcoded 320
+    // Calculate actual maximum bars considering both screen and data limitations
     int actualScreenWidth = getScreenWidth();
-    doc["maxBars"] = calculateMaxBars(actualScreenWidth, INFO_PANEL_WIDTH, 1);
-    doc["screenWidth"] = actualScreenWidth; // Add this for debugging
+    int maxBarsScreen = calculateMaxBars(actualScreenWidth, INFO_PANEL_WIDTH, 1);
+    int maxBarsData = MAX_CANDLES; // Data buffer limitation
+    int actualMaxBars = std::min(maxBarsScreen, maxBarsData);
+    
+    doc["maxBars"] = actualMaxBars;
+    doc["maxBarsScreen"] = maxBarsScreen; // For debugging
+    doc["maxBarsData"] = maxBarsData;     // For debugging
+    doc["screenWidth"] = actualScreenWidth;
     
     doc["useStaticIP"] = USE_STATIC_IP;
     doc["staticIP"] = STATIC_IP;
@@ -234,11 +266,6 @@ String getConfigJSON() {
     JsonArray ranges = doc["validRanges"].to<JsonArray>();
     for (int i = 0; i < VALID_RANGES_COUNT; i++) {
         ranges.add(VALID_RANGES[i]);
-    }
-    
-    JsonArray symbols = doc["validSymbols"].to<JsonArray>();
-    for (int i = 0; i < VALID_SYMBOLS_COUNT; i++) {
-        symbols.add(VALID_SYMBOLS[i]);
     }
     
     String jsonString;
@@ -269,7 +296,14 @@ bool setConfigFromJSON(const String& json) {
         CANDLE_COLLECTION_DURATION = doc["candleDuration"];
     }
     if (doc["symbol"].is<String>()) {
-        STOCK_SYMBOL = doc["symbol"].as<String>();
+        String symbol = doc["symbol"].as<String>();
+        symbol.toUpperCase(); // Ensure it's uppercase
+        if (validateSymbol(symbol)) {
+            STOCK_SYMBOL = symbol;
+            Serial.println("Symbol updated to: " + STOCK_SYMBOL);
+        } else {
+            Serial.println("Invalid symbol rejected: " + symbol);
+        }
     }
     if (doc["enforceHours"].is<bool>()) {
         ENFORCE_MARKET_HOURS = doc["enforceHours"];
@@ -288,9 +322,20 @@ bool setConfigFromJSON(const String& json) {
     }
     if (doc["barsToShow"].is<int>()) {
         int bars = doc["barsToShow"];
-        int maxBars = calculateMaxBars(getScreenWidth(), INFO_PANEL_WIDTH, 1);
-        if (bars >= 1 && bars <= maxBars) {
+        int maxBarsScreen = calculateMaxBars(getScreenWidth(), INFO_PANEL_WIDTH, 1);
+        int maxBarsData = MAX_CANDLES; // Data buffer limitation
+        int actualMaxBars = std::min(maxBarsScreen, maxBarsData);
+        
+        if (bars >= 1 && bars <= actualMaxBars) {
             BARS_TO_SHOW = bars;
+            Serial.printf("Bars to show set to: %d (max screen: %d, max data: %d)\n", 
+                         BARS_TO_SHOW, maxBarsScreen, maxBarsData);
+        } else {
+            // Clamp to valid range
+            BARS_TO_SHOW = std::min(bars, actualMaxBars);
+            BARS_TO_SHOW = std::max(BARS_TO_SHOW, 1);
+            Serial.printf("Bars clamped from %d to %d (max allowed: %d)\n", 
+                         bars, BARS_TO_SHOW, actualMaxBars);
         }
     }
     if (doc["useStaticIP"].is<bool>()) {

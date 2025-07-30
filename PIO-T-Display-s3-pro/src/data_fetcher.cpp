@@ -335,6 +335,65 @@ void DataFetcher::getPriceLevels(float* min_price, float* max_price) {
     *max_price = ceil(*max_price * 100) / 100;
 }
 
+void DataFetcher::getPriceLevelsForVisibleBars(float* min_price, float* max_price, int bars_to_show) {
+    *min_price = std::numeric_limits<float>::max();
+    *max_price = std::numeric_limits<float>::lowest();
+    
+    if (num_candles == 0) {
+        *min_price = 0;
+        *max_price = 100;
+        return;
+    }
+    
+    // Limit bars_to_show to available data
+    int barsToCheck = std::min(bars_to_show, num_candles);
+    
+    Serial.printf("Price calculation debug:\n");
+    Serial.printf("  Requested bars: %d\n", bars_to_show);
+    Serial.printf("  Available candles: %d\n", num_candles);
+    Serial.printf("  Bars to check: %d\n", barsToCheck);
+    Serial.printf("  Newest index: %d\n", newest_candle_index);
+    
+    // Calculate min/max for only the MOST RECENT visible bars
+    // We want the newest barsToCheck candles, not the oldest ones
+    for (int i = 0; i < barsToCheck; i++) {
+        // Calculate index for the i-th most recent candle
+        // newest_candle_index is the most recent (i=0)
+        // newest_candle_index-1 is the second most recent (i=1), etc.
+        int index = (newest_candle_index - i + MAX_CANDLES) % MAX_CANDLES;
+        
+        const enhanced_candle_t& candle = candles[index];
+        
+        // Debug output for first few candles
+        if (i < 5) {
+            Serial.printf("  Bar %d: index=%d, high=%.2f, low=%.2f, open=%.2f, close=%.2f\n", 
+                         i, index, candle.high, candle.low, candle.open, candle.close);
+        }
+        
+        // Validate that we have real data (not uninitialized)
+        if (candle.high > 0 && candle.low > 0 && candle.open > 0 && candle.close > 0) {
+            *min_price = std::min(*min_price, candle.low);
+            *max_price = std::max(*max_price, candle.high);
+        } else {
+            Serial.printf("  Warning: Invalid candle data at index %d (high=%.2f, low=%.2f)\n", 
+                         index, candle.high, candle.low);
+        }
+    }
+    
+    // If we didn't find any valid data, use fallback
+    if (*min_price == std::numeric_limits<float>::max()) {
+        Serial.println("  No valid price data found, using fallback");
+        *min_price = 0;
+        *max_price = 100;
+        return;
+    }
+    
+    // Round to 2 decimal places
+    *min_price = floor(*min_price * 100) / 100;
+    *max_price = ceil(*max_price * 100) / 100;
+    
+    Serial.printf("  Final range: %.2f - %.2f\n", *min_price, *max_price);
+}
 float DataFetcher::getRandomPrice() {
     static float lastPrice = 250.0;
     float change = (random(-100, 101) / 100.0) * 2;

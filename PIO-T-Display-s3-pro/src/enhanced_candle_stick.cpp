@@ -53,34 +53,95 @@ void EnhancedCandleStick::create(lv_obj_t *parent, const String& symbol) {
     int newest_index = DataFetcher::getNewestIndex();
     float current_price = DataFetcher::getCurrentPrice();
     
+    // Debug output for bars calculation
+    Serial.printf("=== BARS DISPLAY DEBUG ===\n");
+    Serial.printf("BARS_TO_SHOW config: %d\n", BARS_TO_SHOW);
+    Serial.printf("Available candles: %d\n", num_candles);
+    Serial.printf("MAX_CANDLES limit: %d\n", MAX_CANDLES);
+    Serial.printf("Newest index: %d\n", newest_index);
+    
     if (num_candles == 0) {
         // No data available, show loading message
         lv_obj_t *loading_label = lv_label_create(chart_container);
         lv_label_set_text(loading_label, "Loading...");
         lv_obj_center(loading_label);
         lv_obj_set_style_text_color(loading_label, lv_color_white(), 0);
+        Serial.println("No data available, showing loading message");
         return;
     }
     
-    float min_price, max_price;
-    DataFetcher::getPriceLevels(&min_price, &max_price);
+    // Calculate how many bars to show and ensure it doesn't exceed available data
+    int barsToShow = std::min(BARS_TO_SHOW, num_candles);
+    Serial.printf("Actual bars to display: %d (limited by %s)\n", 
+                  barsToShow, 
+                  (barsToShow == BARS_TO_SHOW) ? "config" : "available data");
     
-    // Add padding for drawing
+    // FIXED: Calculate price levels manually here instead of using the function
+    float min_price = std::numeric_limits<float>::max();
+    float max_price = std::numeric_limits<float>::lowest();
+    
+    Serial.printf("=== PRICE RANGE DEBUG ===\n");
+    Serial.printf("Calculating price range for %d most recent bars:\n", barsToShow);
+    
+    // Get the most recent barsToShow candles
+    for (int i = 0; i < barsToShow; i++) {
+        // Get the i-th most recent candle
+        int index = (newest_index - i + MAX_CANDLES) % MAX_CANDLES;
+        const enhanced_candle_t& candle = candles[index];
+        
+        // Debug first 5 and last 5 candles
+        if (i < 5 || i >= barsToShow - 5) {
+            Serial.printf("  Bar %d: index=%d, high=%.2f, low=%.2f, open=%.2f, close=%.2f\n", 
+                         i, index, candle.high, candle.low, candle.open, candle.close);
+        }
+        
+        // Only include candles with valid data
+        if (candle.high > 0 && candle.low > 0 && candle.open > 0 && candle.close > 0) {
+            min_price = std::min(min_price, candle.low);
+            max_price = std::max(max_price, candle.high);
+        } else {
+            Serial.printf("  WARNING: Invalid data at index %d\n", index);
+        }
+    }
+    
+    // Handle case where no valid data found
+    if (min_price == std::numeric_limits<float>::max()) {
+        Serial.println("ERROR: No valid price data found!");
+        min_price = 0;
+        max_price = 100;
+    }
+    
+    Serial.printf("Raw price range: %.2f - %.2f\n", min_price, max_price);
+    
+    // Add padding for drawing (10% padding)
     float range = max_price - min_price;
-    float padding = range * 0.1; // 10% padding
+    if (range == 0) range = 1.0f; // Prevent division by zero
+    float padding = range * 0.1f;
     float draw_min = std::max(min_price - padding, 0.0f);
     float draw_max = max_price + padding;
     
-    // Draw grid lines
+    Serial.printf("Display range with padding: %.2f - %.2f\n", draw_min, draw_max);
+    
+    // Draw grid lines with the visible range
     draw_price_gridlines(chart_container, draw_min, draw_max);
     
-    // Draw candlesticks - only show the configured number of bars
-    int barsToShow = min(BARS_TO_SHOW, num_candles);
-    int startIndex = max(0, num_candles - barsToShow);
-    
-    for (int i = 0; i < barsToShow; i++) {
-        int dataIndex = (newest_index - barsToShow + i + 1 + MAX_CANDLES) % MAX_CANDLES;
-        draw_candlestick(chart_container, i, candles[dataIndex], draw_min, draw_max, barsToShow);
+    // Draw candlesticks - display them in chronological order (oldest to newest, left to right)
+    Serial.printf("Drawing %d candlesticks in chronological order:\n", barsToShow);
+    for (int displayPos = 0; displayPos < barsToShow; displayPos++) {
+        // Calculate which candle to show at this display position
+        // displayPos 0 = oldest of the recent bars (newest_index - barsToShow + 1)
+        // displayPos barsToShow-1 = newest bar (newest_index)
+        int candleAge = barsToShow - displayPos - 1; // How many bars back from newest
+        int dataIndex = (newest_index - candleAge + MAX_CANDLES) % MAX_CANDLES;
+        
+        // Debug first few bars
+        if (displayPos < 3) {
+            const enhanced_candle_t& debugCandle = candles[dataIndex];
+            Serial.printf("  Display pos %d: age=%d, dataIndex=%d, close=%.2f\n", 
+                         displayPos, candleAge, dataIndex, debugCandle.close);
+        }
+        
+        draw_candlestick(chart_container, displayPos, candles[dataIndex], draw_min, draw_max, barsToShow);
     }
     
     // Draw current price line
@@ -88,7 +149,7 @@ void EnhancedCandleStick::create(lv_obj_t *parent, const String& symbol) {
         draw_current_price_line(chart_container, current_price, draw_min, draw_max);
     }
     
-    // Create info panel
+    // Create info panel with visible range min/max
     create_info_panel(chart_container, symbol, current_price, min_price, max_price);
     
     // Restore time and date labels
@@ -111,7 +172,7 @@ void EnhancedCandleStick::create(lv_obj_t *parent, const String& symbol) {
         }
     }
     
-    // Add price labels on the left
+    // Add price labels on the left (using visible range)
     char min_price_str[16], max_price_str[16];
     snprintf(min_price_str, sizeof(min_price_str), "%.2f", min_price);
     snprintf(max_price_str, sizeof(max_price_str), "%.2f", max_price);
@@ -127,6 +188,10 @@ void EnhancedCandleStick::create(lv_obj_t *parent, const String& symbol) {
     
     lv_obj_set_style_text_color(min_label, lv_color_white(), 0);
     lv_obj_set_style_text_color(max_label, lv_color_white(), 0);
+    
+    Serial.printf("Chart creation complete. Displayed %d bars with range %.2f - %.2f\n", 
+                  barsToShow, min_price, max_price);
+    Serial.printf("=========================\n");
     
     lv_task_handler();
 }
@@ -205,24 +270,45 @@ void EnhancedCandleStick::draw_candlestick(lv_obj_t *parent, int index, const en
     lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
     lv_coord_t chart_height = lv_obj_get_height(parent);
     
-    // Calculate candle width based on actual bars to show, not MAX_CANDLES
-    int available_width = chart_width - (CANDLE_PADDING * (total_bars - 1));
-    int candle_width = available_width / total_bars;
+    // FIXED: Proper bar width calculation that allows 1-pixel candles
+    int candle_width, spacing;
     
-    // Ensure minimum width of 1 pixel
-    candle_width = std::max(1, candle_width);
-    
-    // Recalculate spacing if needed to fit all bars
-    int actual_spacing = CANDLE_PADDING;
-    int total_width_needed = (candle_width * total_bars) + (actual_spacing * (total_bars - 1));
-    
-    if (total_width_needed > chart_width) {
-        // Reduce padding if necessary
-        actual_spacing = std::max(0, (chart_width - (candle_width * total_bars)) / std::max(1, (total_bars - 1)));
+    if (CANDLE_PADDING == 0) {
+        // No padding: divide available width evenly
+        candle_width = chart_width / total_bars;
+        spacing = 0;
+    } else {
+        // With padding: calculate optimal width and spacing
+        // Available space = chart_width
+        // Formula: total_bars * candle_width + (total_bars - 1) * padding = chart_width
+        // Solve for candle_width: candle_width = (chart_width - (total_bars - 1) * padding) / total_bars
+        
+        int total_padding_space = (total_bars - 1) * CANDLE_PADDING;
+        candle_width = (chart_width - total_padding_space) / total_bars;
+        spacing = CANDLE_PADDING;
+        
+        // If calculated width is too small, reduce padding
+        if (candle_width < 1) {
+            candle_width = 1;
+            // Recalculate spacing with minimum 1-pixel candles
+            int remaining_space = chart_width - total_bars;
+            spacing = std::max(0, remaining_space / std::max(1, (total_bars - 1)));
+        }
     }
     
-    int x = index * (candle_width + actual_spacing);
+    // Ensure minimum candle width of 1 pixel
+    candle_width = std::max(1, candle_width);
     
+    // Calculate position
+    int x = index * (candle_width + spacing);
+    
+    // Debug output for first few candles
+    if (index < 3) {
+        Serial.printf("Bar %d: width=%d, spacing=%d, x=%d, total_bars=%d, chart_width=%d\n", 
+                     index, candle_width, spacing, x, total_bars, chart_width);
+    }
+    
+    // Calculate Y positions
     int y_top = chart_height * (1.0f - (candle.high - min_price) / (max_price - min_price));
     int y_bottom = chart_height * (1.0f - (candle.low - min_price) / (max_price - min_price));
     int y_open = chart_height * (1.0f - (candle.open - min_price) / (max_price - min_price));
@@ -243,7 +329,7 @@ void EnhancedCandleStick::draw_candlestick(lv_obj_t *parent, int index, const en
             lv_color_make(255, 0, 0);   // Red
     }
     
-    // Draw wick
+    // Draw wick (always 1 pixel wide, centered)
     lv_obj_t *wick = lv_obj_create(parent);
     lv_obj_set_size(wick, 1, y_bottom - y_top);
     lv_obj_set_style_bg_color(wick, candle_color, 0);
@@ -284,12 +370,29 @@ void EnhancedCandleStick::draw_price_gridlines(lv_obj_t *parent, float min_price
     lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
     lv_coord_t chart_height = lv_obj_get_height(parent);
     
-    float first_line = ceil(min_price);
-    float last_line = floor(max_price);
+    // FIXED: Use a more intelligent grid calculation
+    float price_range = max_price - min_price;
+    float grid_interval;
+    
+    // Calculate appropriate grid interval based on price range
+    if (price_range > 100) {
+        grid_interval = 10.0f;
+    } else if (price_range > 50) {
+        grid_interval = 5.0f;
+    } else if (price_range > 10) {
+        grid_interval = 1.0f;
+    } else if (price_range > 1) {
+        grid_interval = 0.5f;
+    } else {
+        grid_interval = 0.1f;
+    }
+    
+    // Find first grid line
+    float first_line = ceil(min_price / grid_interval) * grid_interval;
     
     lv_color_t grid_color = lv_color_make(100, 100, 100);
     
-    for (float price = first_line; price <= last_line; price += 1.0f) {
+    for (float price = first_line; price <= max_price; price += grid_interval) {
         int y_pos = chart_height * (1.0f - (price - min_price) / (max_price - min_price));
         y_pos = constrain(y_pos, 0, chart_height);
         
@@ -332,7 +435,7 @@ void EnhancedCandleStick::create_info_panel(lv_obj_t *parent, const String& symb
     lv_obj_set_style_text_font(price_label, &lv_font_montserrat_16, 0);
     lv_obj_set_user_data(price_label, (void*)PRICE_LABEL_ID);
     
-    // High/Low labels
+    // High/Low labels (using visible range)
     lv_obj_t *high_label = lv_label_create(info_panel);
     lv_obj_t *low_label = lv_label_create(info_panel);
     

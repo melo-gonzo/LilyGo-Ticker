@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 #define TIME_ZONE "PST8PDT" // Set to the desired time zone
-#define MAX_CANDLES 130  // Define this as a constant
+#define MAX_CANDLES 500  // Define this as a constant
 #define INFO_PANEL_WIDTH 80
 #define CANDLE_PADDING 0
 
@@ -23,13 +23,11 @@ extern String YAHOO_RANGE;     // 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, m
 // Chart display configuration
 extern int BARS_TO_SHOW;  // Added missing declaration
 
-// Valid options for dropdowns
+// Valid options for dropdowns (symbols removed - now free text input)
 extern const char* VALID_INTERVALS[];
 extern const int VALID_INTERVALS_COUNT;
 extern const char* VALID_RANGES[];
 extern const int VALID_RANGES_COUNT;
-extern const char* VALID_SYMBOLS[];
-extern const int VALID_SYMBOLS_COUNT;
 
 // Network configuration
 extern bool USE_STATIC_IP;
@@ -42,6 +40,7 @@ void loadConfig();
 void saveConfig();
 bool validateInterval(const String& interval);
 bool validateRange(const String& range);
+bool validateSymbol(const String& symbol);  // NEW: Symbol validation function
 bool validateIP(const String& ip);
 int calculateMaxBars(int screenWidth, int panelWidth = 80, int candleMinWidth = 1);
 int getScreenWidth();

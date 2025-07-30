@@ -48,6 +48,7 @@ public:
     static int getNewestIndex() { return newest_candle_index; }
     static float getCurrentPrice() { return current_price; }
     static void getPriceLevels(float* min_price, float* max_price);
+    static void getPriceLevelsForVisibleBars(float* min_price, float* max_price, int bars_to_show); // NEW METHOD
     static void initializeTestData();
     static void reset();
 };
