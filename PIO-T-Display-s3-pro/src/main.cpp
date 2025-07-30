@@ -22,6 +22,19 @@ static String last_range = "";
 
 void connectWiFi() {
     Serial.println("Connecting to WiFi...");
+    
+    // Configure static IP (modify these values for your network)
+    IPAddress local_IP(192, 168, 4, 184);     // Set your desired static IP
+    IPAddress gateway(192, 168, 4, 1);        // Your router's IP
+    IPAddress subnet(255, 255, 255, 0);       // Subnet mask
+    IPAddress primaryDNS(8, 8, 8, 8);         // Google DNS
+    IPAddress secondaryDNS(8, 8, 4, 4);       // Google DNS secondary
+    
+    // Configure static IP
+    if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
+        Serial.println("Static IP configuration failed");
+    }
+    
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     
     unsigned long startAttemptTime = millis();
@@ -35,6 +48,10 @@ void connectWiFi() {
         Serial.println("WiFi connected successfully");
         Serial.print("IP address: ");
         Serial.println(WiFi.localIP());
+        Serial.print("Gateway: ");
+        Serial.println(WiFi.gatewayIP());
+        Serial.print("Subnet: ");
+        Serial.println(WiFi.subnetMask());
     } else {
         Serial.println("WiFi connection failed");
     }
