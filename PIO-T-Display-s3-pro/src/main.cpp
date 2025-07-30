@@ -1,122 +1,125 @@
 #include <Arduino.h>
+#include <WiFi.h>
 #include <LV_Helper.h>
 #include <LilyGo_AMOLED.h>
 #include <lvgl.h>
 #include "ui.h"
-#include "CandleStick.h"
-#include "TimeHelper.h"
-#include "WiFiProvHelper.h"
-#include "DebugOverlay.h"
+#include "candle_stick.h"
+#include "time_helper.h"
 #include "config.h"
 #include "market_hours.h"
-
+#include "credentials.h"
 
 LilyGo_Class amoled;
-const int resetPin = 0;
-const unsigned long resetTime = 5000;
 
-unsigned long resetButtonPressedTime = 0;
-bool resetButtonState = false;
+void connectWiFi() {
+    Serial.println("Connecting to WiFi...");
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    
+    unsigned long startAttemptTime = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 20000) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println();
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("WiFi connected successfully");
+        Serial.print("IP address: ");
+        Serial.println(WiFi.localIP());
+    } else {
+        Serial.println("WiFi connection failed");
+    }
+}
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
-
+    
+    // Initialize display
     if (!amoled.begin()) {
+        Serial.println("Display initialization failed!");
         while (1) delay(1000);
     }
-
+    
     amoled.setRotation(0);
     amoled.setBrightness(125);
-
+    
+    // Initialize LVGL and UI
     beginLvglHelper(amoled);
     ui_init();
-
-    lv_scr_act();
-
+    
+    // Load configuration
+    loadConfig();
+    
+    // Initialize stock data parameters
+    set_intraday_parameters(INTRADAY_UPDATE_INTERVAL, CANDLE_COLLECTION_DURATION);
+    
+    // Initialize test data if enabled
     if (USE_TEST_DATA) {
-        set_intraday_parameters(INTRADAY_UPDATE_INTERVAL, CANDLE_COLLECTION_DURATION);
-        initialize_test_data();  // Initialize with historical test data
-    } else {
-        set_intraday_parameters(INTRADAY_UPDATE_INTERVAL, CANDLE_COLLECTION_DURATION);
+        initialize_test_data();
     }
-
-    if (isProvisioned()) {
-        WiFi.begin();
-        Serial.println("Connecting to WiFi...");
-
-        unsigned long startAttemptTime = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 20000) {
-            lv_task_handler();
-            delay(500);
-            Serial.print(".");
-        }
-        Serial.println();
-
-        if (WiFi.status() == WL_CONNECTED) {
-            Serial.println("WiFi connected. Starting NTP sync...");
-            initiateNTPTimeSync();
-
-            // Load chart screen before fetching data
-            lv_scr_load(ui_chart);
-
-            // Fetch data and create chart
-            if (USE_INTRADAY_DATA) {
-                fetch_intraday_data(STOCK_SYMBOL);
-            } else {
-                fetch_candle_data(STOCK_SYMBOL);
-            }
-            candle_stick_create(ui_chart, STOCK_SYMBOL);
+    
+    // Connect to WiFi
+    connectWiFi();
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        // Start NTP sync
+        initiateNTPTimeSync();
+        
+        // Load chart screen
+        lv_scr_load(ui_chart);
+        
+        // Fetch initial data and create chart
+        if (USE_INTRADAY_DATA) {
+            fetch_intraday_data(STOCK_SYMBOL);
         } else {
-            Serial.println("WiFi connection failed. Starting provisioning...");
-            setupProvisioning(NULL, "LilyGo-StockTicker", NULL, false);
+            fetch_candle_data(STOCK_SYMBOL);
         }
+        candle_stick_create(ui_chart, STOCK_SYMBOL);
     } else {
-        Serial.println("Not provisioned. Starting WiFi provisioning...");
-        setupProvisioning(NULL, "LilyGo-StockTicker", NULL, false);
+        Serial.println("Cannot proceed without WiFi connection");
+        // Could show error screen here
     }
-
-    pinMode(resetPin, INPUT_PULLUP);
 }
 
 void loop() {
     lv_task_handler();
     delay(5);
-
-    // Handle reset button
-    if (digitalRead(resetPin) == LOW) {
-        if (!resetButtonState) {
-            resetButtonState = true;
-            resetButtonPressedTime = millis();
-        } else if (millis() - resetButtonPressedTime >= resetTime) {
-            resetProvisioning();
-        }
-    } else {
-        resetButtonState = false;
+    
+    // Update time display every second
+    static unsigned long lastTimeUpdate = 0;
+    if (millis() - lastTimeUpdate > 1000) {
+        updateTimeAndDate();
+        lastTimeUpdate = millis();
     }
-
-    // Create a dedicated time update loop - only update the labels, not redraw the chart
-    static unsigned long lastTimeOnlyUpdate = 0;
-    if (millis() - lastTimeOnlyUpdate > 1000) {  // Update every second
-        updateTimeAndDate();  // Using our improved version that only changes text when needed
-        lastTimeOnlyUpdate = millis();
-    }
-
-    // Separate stock chart update loop - don't mix with time updates
+    
+    // Update stock data based on configuration
     static unsigned long lastStockUpdate = 0;
     unsigned long updateInterval = USE_INTRADAY_DATA ? 
                                   (INTRADAY_UPDATE_INTERVAL * 1000) : 
-                                  (60 * 1000); // Use 60 seconds for daily data
-
+                                  (60 * 1000); // 60 seconds for daily data
+    
     if (millis() - lastStockUpdate > updateInterval) {
-        if (USE_INTRADAY_DATA) {
-            update_intraday_data(STOCK_SYMBOL); // This calls candle_stick_create
-        } else {
-            // Always fetch daily data, regardless of market hours
-            if (fetch_candle_data(STOCK_SYMBOL)) {
-                candle_stick_create(ui_chart, STOCK_SYMBOL);
+        if (WiFi.status() == WL_CONNECTED) {
+            if (USE_INTRADAY_DATA) {
+                update_intraday_data(STOCK_SYMBOL);
+            } else {
+                if (fetch_candle_data(STOCK_SYMBOL)) {
+                    candle_stick_create(ui_chart, STOCK_SYMBOL);
+                }
             }
         }
         lastStockUpdate = millis();
+    }
+    
+    // Check WiFi connection and reconnect if needed
+    static unsigned long lastWiFiCheck = 0;
+    if (millis() - lastWiFiCheck > 30000) { // Check every 30 seconds
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.println("WiFi disconnected, attempting to reconnect...");
+            connectWiFi();
+        }
+        lastWiFiCheck = millis();
     }
 }

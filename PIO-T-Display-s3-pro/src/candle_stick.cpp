@@ -1,10 +1,10 @@
-#include "CandleStick.h"
+#include "candle_stick.h"
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <lvgl.h>
 #include "ui.h"
-#include "TimeHelper.h"
+#include "time_helper.h"
 #include "config.h"
 #include "market_hours.h"
 
