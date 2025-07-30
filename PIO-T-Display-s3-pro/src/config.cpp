@@ -41,7 +41,7 @@ void loadConfig() {
     preferences.begin("stocktracker", true); // read-only mode
     
     USE_TEST_DATA = preferences.getBool("useTestData", false);
-    USE_INTRADAY_DATA = preferences.getBool("useIntraday", true);
+    USE_INTRADAY_DATA = true; // Always enable for real-time updates
     INTRADAY_UPDATE_INTERVAL = preferences.getInt("updateInterval", 1);
     CANDLE_COLLECTION_DURATION = preferences.getInt("candleDuration", 180);
     STOCK_SYMBOL = preferences.getString("symbol", "SPY");
@@ -66,6 +66,9 @@ void loadConfig() {
         YAHOO_RANGE = "1d";
     }
     
+    // Auto-sync candle duration with interval on startup
+    syncCandleDurationWithInterval();
+    
     // Validate bars to show using actual screen dimensions
     int actualScreenWidth = getScreenWidth();
     int maxBars = calculateMaxBars(actualScreenWidth, INFO_PANEL_WIDTH, 1);
@@ -79,10 +82,11 @@ void loadConfig() {
     Serial.println("Symbol: " + STOCK_SYMBOL);
     Serial.println("Interval: " + YAHOO_INTERVAL);
     Serial.println("Range: " + YAHOO_RANGE);
+    Serial.println("Auto-synced candle duration: " + String(CANDLE_COLLECTION_DURATION) + " seconds");
     Serial.println("Bars to show: " + String(BARS_TO_SHOW) + " (max: " + String(maxBars) + ")");
     Serial.println("Screen width: " + String(actualScreenWidth));
     Serial.println("Use Test Data: " + String(USE_TEST_DATA));
-    Serial.println("Use Intraday: " + String(USE_INTRADAY_DATA));
+    Serial.println("Use Intraday: " + String(USE_INTRADAY_DATA) + " (always enabled)");
     Serial.println("Network - Use Static IP: " + String(USE_STATIC_IP));
     if (USE_STATIC_IP) {
         Serial.println("Static IP: " + STATIC_IP);
@@ -228,50 +232,35 @@ int getScreenWidth() {
     return 320; // Fallback for T-Display-AMOLED
 }
 
-String getConfigJSON() {
-    JsonDocument doc;
+void syncCandleDurationWithInterval() {
+    int intervalSeconds = 0;
     
-    doc["useTestData"] = USE_TEST_DATA;
-    doc["useIntraday"] = USE_INTRADAY_DATA;
-    doc["updateInterval"] = INTRADAY_UPDATE_INTERVAL;
-    doc["candleDuration"] = CANDLE_COLLECTION_DURATION;
-    doc["symbol"] = STOCK_SYMBOL;
-    doc["enforceHours"] = ENFORCE_MARKET_HOURS;
-    doc["yahooInterval"] = YAHOO_INTERVAL;
-    doc["yahooRange"] = YAHOO_RANGE;
-    doc["barsToShow"] = BARS_TO_SHOW;
-    
-    // Calculate actual maximum bars considering both screen and data limitations
-    int actualScreenWidth = getScreenWidth();
-    int maxBarsScreen = calculateMaxBars(actualScreenWidth, INFO_PANEL_WIDTH, 1);
-    int maxBarsData = MAX_CANDLES; // Data buffer limitation
-    int actualMaxBars = std::min(maxBarsScreen, maxBarsData);
-    
-    doc["maxBars"] = actualMaxBars;
-    doc["maxBarsScreen"] = maxBarsScreen; // For debugging
-    doc["maxBarsData"] = maxBarsData;     // For debugging
-    doc["screenWidth"] = actualScreenWidth;
-    
-    doc["useStaticIP"] = USE_STATIC_IP;
-    doc["staticIP"] = STATIC_IP;
-    doc["gatewayIP"] = GATEWAY_IP;
-    doc["subnetMask"] = SUBNET_MASK;
-    
-    // Add valid options for dropdowns
-    JsonArray intervals = doc["validIntervals"].to<JsonArray>();
-    for (int i = 0; i < VALID_INTERVALS_COUNT; i++) {
-        intervals.add(VALID_INTERVALS[i]);
+    if (YAHOO_INTERVAL == "1m") intervalSeconds = 60;
+    else if (YAHOO_INTERVAL == "2m") intervalSeconds = 120;
+    else if (YAHOO_INTERVAL == "5m") intervalSeconds = 300;
+    else if (YAHOO_INTERVAL == "15m") intervalSeconds = 900;
+    else if (YAHOO_INTERVAL == "30m") intervalSeconds = 1800;
+    else if (YAHOO_INTERVAL == "60m" || YAHOO_INTERVAL == "1h") intervalSeconds = 3600;
+    else if (YAHOO_INTERVAL == "90m") intervalSeconds = 5400;
+    else if (YAHOO_INTERVAL == "1d") intervalSeconds = 86400;
+    else if (YAHOO_INTERVAL == "5d") intervalSeconds = 432000; // 5 days
+    else if (YAHOO_INTERVAL == "1wk") intervalSeconds = 604800; // 1 week
+    else if (YAHOO_INTERVAL == "1mo") intervalSeconds = 2592000; // 30 days (approx)
+    else if (YAHOO_INTERVAL == "3mo") intervalSeconds = 7776000; // 90 days (approx)
+    else {
+        // For unsupported intervals, default to 5 minutes
+        Serial.println("Warning: Unsupported interval, defaulting to 5 minutes");
+        intervalSeconds = 300;
     }
     
-    JsonArray ranges = doc["validRanges"].to<JsonArray>();
-    for (int i = 0; i < VALID_RANGES_COUNT; i++) {
-        ranges.add(VALID_RANGES[i]);
+    if (intervalSeconds != CANDLE_COLLECTION_DURATION) {
+        Serial.printf("Auto-syncing candle duration: %d -> %d seconds (%s)\n", 
+                     CANDLE_COLLECTION_DURATION, intervalSeconds, YAHOO_INTERVAL.c_str());
+        CANDLE_COLLECTION_DURATION = intervalSeconds;
     }
-    
-    String jsonString;
-    serializeJson(doc, jsonString);
-    return jsonString;
 }
+
+
 
 bool setConfigFromJSON(const String& json) {
     JsonDocument doc;
@@ -286,15 +275,17 @@ bool setConfigFromJSON(const String& json) {
     if (doc["useTestData"].is<bool>()) {
         USE_TEST_DATA = doc["useTestData"];
     }
-    if (doc["useIntraday"].is<bool>()) {
-        USE_INTRADAY_DATA = doc["useIntraday"];
-    }
+    
+    // Always enable intraday data for real-time updates
+    USE_INTRADAY_DATA = true;
+    Serial.println("Intraday data always enabled for real-time updates");
+    
     if (doc["updateInterval"].is<int>()) {
         INTRADAY_UPDATE_INTERVAL = doc["updateInterval"];
     }
-    if (doc["candleDuration"].is<int>()) {
-        CANDLE_COLLECTION_DURATION = doc["candleDuration"];
-    }
+    
+    // Remove candleDuration handling - it will be auto-synced
+    
     if (doc["symbol"].is<String>()) {
         String symbol = doc["symbol"].as<String>();
         symbol.toUpperCase(); // Ensure it's uppercase
@@ -312,6 +303,9 @@ bool setConfigFromJSON(const String& json) {
         String interval = doc["yahooInterval"].as<String>();
         if (validateInterval(interval)) {
             YAHOO_INTERVAL = interval;
+            syncCandleDurationWithInterval(); // Auto-sync duration with interval
+            Serial.printf("Interval updated to: %s (duration: %d seconds)\n", 
+                         YAHOO_INTERVAL.c_str(), CANDLE_COLLECTION_DURATION);
         }
     }
     if (doc["yahooRange"].is<String>()) {
@@ -363,4 +357,53 @@ bool setConfigFromJSON(const String& json) {
     // Save the updated configuration
     saveConfig();
     return true;
+}
+
+// Updated getConfigJSON function - remove candleDuration
+String getConfigJSON() {
+    JsonDocument doc;
+    
+    doc["useTestData"] = USE_TEST_DATA;
+    doc["useIntraday"] = USE_INTRADAY_DATA;
+    doc["updateInterval"] = INTRADAY_UPDATE_INTERVAL;
+    // Remove candleDuration from JSON response
+    doc["symbol"] = STOCK_SYMBOL;
+    doc["enforceHours"] = ENFORCE_MARKET_HOURS;
+    doc["yahooInterval"] = YAHOO_INTERVAL;
+    doc["yahooRange"] = YAHOO_RANGE;
+    doc["barsToShow"] = BARS_TO_SHOW;
+    
+    // Add computed candle duration for display purposes (read-only)
+    doc["computedCandleDuration"] = CANDLE_COLLECTION_DURATION;
+    
+    // Calculate actual maximum bars considering both screen and data limitations
+    int actualScreenWidth = getScreenWidth();
+    int maxBarsScreen = calculateMaxBars(actualScreenWidth, INFO_PANEL_WIDTH, 1);
+    int maxBarsData = MAX_CANDLES; // Data buffer limitation
+    int actualMaxBars = std::min(maxBarsScreen, maxBarsData);
+    
+    doc["maxBars"] = actualMaxBars;
+    doc["maxBarsScreen"] = maxBarsScreen; // For debugging
+    doc["maxBarsData"] = maxBarsData;     // For debugging
+    doc["screenWidth"] = actualScreenWidth;
+    
+    doc["useStaticIP"] = USE_STATIC_IP;
+    doc["staticIP"] = STATIC_IP;
+    doc["gatewayIP"] = GATEWAY_IP;
+    doc["subnetMask"] = SUBNET_MASK;
+    
+    // Add valid options for dropdowns
+    JsonArray intervals = doc["validIntervals"].to<JsonArray>();
+    for (int i = 0; i < VALID_INTERVALS_COUNT; i++) {
+        intervals.add(VALID_INTERVALS[i]);
+    }
+    
+    JsonArray ranges = doc["validRanges"].to<JsonArray>();
+    for (int i = 0; i < VALID_RANGES_COUNT; i++) {
+        ranges.add(VALID_RANGES[i]);
+    }
+    
+    String jsonString;
+    serializeJson(doc, jsonString);
+    return jsonString;
 }

@@ -38,9 +38,10 @@ extern String SUBNET_MASK;
 // Function to load configuration
 void loadConfig();
 void saveConfig();
+void syncCandleDurationWithInterval();  // NEW: Auto-sync function
 bool validateInterval(const String& interval);
 bool validateRange(const String& range);
-bool validateSymbol(const String& symbol);  // NEW: Symbol validation function
+bool validateSymbol(const String& symbol);
 bool validateIP(const String& ip);
 int calculateMaxBars(int screenWidth, int panelWidth = 80, int candleMinWidth = 1);
 int getScreenWidth();

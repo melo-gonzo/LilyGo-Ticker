@@ -161,10 +161,8 @@ button:hover{background:#0056b3}
 <div class="form-group">
 <label>Update Interval (sec):</label>
 <input type="number" id="updateInterval" min="1" max="300" value="1">
-</div>
-<div class="form-group">
-<label>Candle Duration (sec):</label>
-<input type="number" id="candleDuration" min="1" max="86400" value="180">
+<div style="font-size:12px;color:#666;margin-top:5px;">
+How often to fetch new price data from the market
 </div>
 </div>
 <div class="form-group">
@@ -173,8 +171,13 @@ button:hover{background:#0056b3}
 <div id="barsHelpText" style="color:#666;font-size:12px;margin-top:5px;white-space:pre-line;">
 Max bars depends on screen resolution and data buffer
 </div>
-<div id="barsWarning" style="color:#856404;background:#fff3cd;border:1px solid #ffeaa7;padding:8px;border-radius:4px;margin-top:5px;display:none;font-size:12px;">
-<strong>Note:</strong> The actual number of bars displayed may be limited by available data.
+</div>
+</div>
+
+<div class="form-group">
+<div id="candleDurationInfo" style="background:#e3f2fd;padding:10px;border-radius:4px;font-size:12px;color:#1565c0;">
+<strong>Candle Duration:</strong> Auto-synced with interval (<span id="computedDuration">120</span> seconds)
+<br><em>Historical and real-time candles will have consistent durations</em>
 </div>
 </div>
 
@@ -186,9 +189,8 @@ Max bars depends on screen resolution and data buffer
 </div>
 </div>
 <div class="form-group">
-<div class="checkbox-group">
-<input type="checkbox" id="useIntraday" checked>
-<label>Use Intraday Data</label>
+<div style="background:#fff3cd;padding:8px;border-radius:4px;font-size:12px;color:#856404;">
+<strong>Real-time Updates:</strong> Always enabled for live price tracking
 </div>
 </div>
 <div class="form-group">
@@ -279,8 +281,12 @@ document.getElementById('symbol').value = config.symbol || 'SPY';
 document.getElementById('yahooInterval').value = config.yahooInterval || '1m';
 document.getElementById('yahooRange').value = config.yahooRange || '1d';
 document.getElementById('updateInterval').value = config.updateInterval || 1;
-document.getElementById('candleDuration').value = config.candleDuration || 180;
+// Remove: document.getElementById('candleDuration').value = config.candleDuration || 180;
 document.getElementById('barsToShow').value = config.barsToShow || 50;
+
+// Show computed candle duration
+const computedDuration = config.computedCandleDuration || 120;
+document.getElementById('computedDuration').textContent = computedDuration;
 
 // Update bars validation with more detailed info
 const maxBars = config.maxBars;
@@ -306,7 +312,7 @@ if (maxBarsData < maxBarsScreen) {
 }
 
 document.getElementById('useTestData').checked = config.useTestData || false;
-document.getElementById('useIntraday').checked = config.useIntraday !== false;
+// Remove intraday checkbox since it's always enabled
 document.getElementById('enforceHours').checked = config.enforceHours !== false;
 
 document.getElementById('useStaticIP').checked = config.useStaticIP || false;
@@ -320,6 +326,29 @@ staticFields.style.display = document.getElementById('useStaticIP').checked ? 'b
 }catch(e){console.log('Load config error:',e)}
 }
 
+// Add interval change handler to update computed duration display
+document.getElementById('yahooInterval').addEventListener('change', function() {
+    // Update the displayed duration when interval changes
+    const intervalToDuration = {
+        '1m': 60,
+        '2m': 120,
+        '5m': 300,
+        '15m': 900,
+        '30m': 1800,
+        '60m': 3600,
+        '1h': 3600,
+        '90m': 5400,
+        '1d': 86400,
+        '5d': 432000,
+        '1wk': 604800,
+        '1mo': 2592000,
+        '3mo': 7776000
+    };
+    
+    const duration = intervalToDuration[this.value] || 300; // Default to 5 minutes
+    document.getElementById('computedDuration').textContent = duration;
+});
+
 document.getElementById('configForm').addEventListener('submit', async function(e){
 e.preventDefault();
 
@@ -329,8 +358,8 @@ if (!symbol) {
     showStatus('Please enter a stock symbol', 'error');
     return;
 }
-if (symbol.length > 8) {
-    symbol = symbol.substring(0, 8);
+if (symbol.length > 6) {
+    symbol = symbol.substring(0, 6);
 }
 // Basic validation: must contain at least one letter
 if (!/[A-Z]/.test(symbol)) {
@@ -351,10 +380,10 @@ symbol: symbol,
 yahooInterval: document.getElementById('yahooInterval').value,
 yahooRange: document.getElementById('yahooRange').value,
 updateInterval: parseInt(document.getElementById('updateInterval').value),
-candleDuration: parseInt(document.getElementById('candleDuration').value),
+// Remove: candleDuration: parseInt(document.getElementById('candleDuration').value),
 barsToShow: barsToShow,
 useTestData: document.getElementById('useTestData').checked,
-useIntraday: document.getElementById('useIntraday').checked,
+// Remove: useIntraday: document.getElementById('useIntraday').checked,
 enforceHours: document.getElementById('enforceHours').checked,
 useStaticIP: document.getElementById('useStaticIP').checked,
 staticIP: document.getElementById('staticIP').value,
@@ -370,11 +399,11 @@ body: JSON.stringify(config)
 });
 const result = await response.json();
 if(response.ok) {
-    let message = 'Updated successfully!';
+    let message = 'Updated successfully! Candle duration auto-synced with interval.';
     if (config.useStaticIP) {
         message += ' Device restart required for network changes.';
     }
-    // Reload config to get updated max bars in case screen resolution changed
+    // Reload config to get updated computed duration
     setTimeout(loadConfig, 1000);
     showStatus(message, 'success');
 } else {

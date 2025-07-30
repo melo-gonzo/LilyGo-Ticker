@@ -153,6 +153,13 @@ void setup() {
     // Load configuration from preferences
     loadConfig();
     
+    // Ensure intraday data is always enabled for real-time updates
+    if (!USE_INTRADAY_DATA) {
+        USE_INTRADAY_DATA = true;
+        saveConfig();
+        Serial.println("Intraday data enabled for real-time updates");
+    }
+    
     // Store initial configuration state
     last_symbol = STOCK_SYMBOL;
     last_interval = YAHOO_INTERVAL;
