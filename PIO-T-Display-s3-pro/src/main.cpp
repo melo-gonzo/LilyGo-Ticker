@@ -4,13 +4,21 @@
 #include <LilyGo_AMOLED.h>
 #include <lvgl.h>
 #include "ui.h"
-#include "candle_stick.h"
+#include "enhanced_candle_stick.h"
+#include "data_fetcher.h"
 #include "time_helper.h"
 #include "config.h"
+#include "web_server.h"
 #include "market_hours.h"
 #include "credentials.h"
 
 LilyGo_Class amoled;
+
+// State management
+static bool data_needs_refresh = false;
+static String last_symbol = "";
+static String last_interval = "";
+static String last_range = "";
 
 void connectWiFi() {
     Serial.println("Connecting to WiFi...");
@@ -32,9 +40,46 @@ void connectWiFi() {
     }
 }
 
+void checkConfigChanges() {
+    // Check if any critical parameters have changed
+    if (last_symbol != STOCK_SYMBOL || 
+        last_interval != YAHOO_INTERVAL || 
+        last_range != YAHOO_RANGE) {
+        
+        Serial.println("Configuration changed, refreshing data...");
+        Serial.println("Symbol: " + last_symbol + " -> " + STOCK_SYMBOL);
+        Serial.println("Interval: " + last_interval + " -> " + YAHOO_INTERVAL);
+        Serial.println("Range: " + last_range + " -> " + YAHOO_RANGE);
+        
+        data_needs_refresh = true;
+        last_symbol = STOCK_SYMBOL;
+        last_interval = YAHOO_INTERVAL;
+        last_range = YAHOO_RANGE;
+    }
+}
+
+void refreshDataIfNeeded() {
+    if (data_needs_refresh) {
+        Serial.println("Reinitializing data fetcher with new parameters...");
+        
+        // Initialize data fetcher with new settings
+        if (DataFetcher::initialize(STOCK_SYMBOL)) {
+            Serial.println("Data fetcher reinitialized successfully");
+            // Force immediate chart update
+            EnhancedCandleStick::create(ui_chart, STOCK_SYMBOL);
+        } else {
+            Serial.println("Failed to reinitialize data fetcher");
+        }
+        
+        data_needs_refresh = false;
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(1000);
+    
+    Serial.println("Starting Stock Tracker...");
     
     // Initialize display
     if (!amoled.begin()) {
@@ -49,43 +94,66 @@ void setup() {
     beginLvglHelper(amoled);
     ui_init();
     
-    // Load configuration
+    // Load configuration from preferences
     loadConfig();
     
-    // Initialize stock data parameters
-    set_intraday_parameters(INTRADAY_UPDATE_INTERVAL, CANDLE_COLLECTION_DURATION);
-    
-    // Initialize test data if enabled
-    if (USE_TEST_DATA) {
-        initialize_test_data();
-    }
+    // Store initial configuration state
+    last_symbol = STOCK_SYMBOL;
+    last_interval = YAHOO_INTERVAL;
+    last_range = YAHOO_RANGE;
     
     // Connect to WiFi
     connectWiFi();
     
     if (WiFi.status() == WL_CONNECTED) {
+        // Start web server
+        if (StockWebServer::begin()) {
+            Serial.println("Web server started successfully");
+        } else {
+            Serial.println("Failed to start web server");
+        }
+        
         // Start NTP sync
         initiateNTPTimeSync();
         
         // Load chart screen
         lv_scr_load(ui_chart);
         
-        // Fetch initial data and create chart
-        if (USE_INTRADAY_DATA) {
-            fetch_intraday_data(STOCK_SYMBOL);
+        // Initialize data fetcher
+        if (DataFetcher::initialize(STOCK_SYMBOL)) {
+            Serial.println("Data fetcher initialized successfully");
+            EnhancedCandleStick::create(ui_chart, STOCK_SYMBOL);
         } else {
-            fetch_candle_data(STOCK_SYMBOL);
+            Serial.println("Failed to initialize data fetcher");
         }
-        candle_stick_create(ui_chart, STOCK_SYMBOL);
     } else {
         Serial.println("Cannot proceed without WiFi connection");
-        // Could show error screen here
+        // Show error screen or message
+        lv_scr_load(ui_chart);
+        lv_obj_t *chart_container = (lv_obj_t *)lv_obj_get_user_data(ui_chart);
+        if (chart_container != NULL) {
+            lv_obj_t *error_label = lv_label_create(chart_container);
+            lv_label_set_text(error_label, "WiFi Connection Failed");
+            lv_obj_center(error_label);
+            lv_obj_set_style_text_color(error_label, lv_color_make(255, 0, 0), 0);
+        }
     }
 }
 
 void loop() {
     lv_task_handler();
     delay(5);
+    
+    // Handle web server requests
+    StockWebServer::handleClient();
+    
+    // Check for configuration changes
+    static unsigned long lastConfigCheck = 0;
+    if (millis() - lastConfigCheck > 1000) { // Check every second
+        checkConfigChanges();
+        refreshDataIfNeeded();
+        lastConfigCheck = millis();
+    }
     
     // Update time display every second
     static unsigned long lastTimeUpdate = 0;
@@ -96,18 +164,13 @@ void loop() {
     
     // Update stock data based on configuration
     static unsigned long lastStockUpdate = 0;
-    unsigned long updateInterval = USE_INTRADAY_DATA ? 
-                                  (INTRADAY_UPDATE_INTERVAL * 1000) : 
-                                  (60 * 1000); // 60 seconds for daily data
+    unsigned long updateInterval = INTRADAY_UPDATE_INTERVAL * 1000;
     
     if (millis() - lastStockUpdate > updateInterval) {
         if (WiFi.status() == WL_CONNECTED) {
-            if (USE_INTRADAY_DATA) {
-                update_intraday_data(STOCK_SYMBOL);
-            } else {
-                if (fetch_candle_data(STOCK_SYMBOL)) {
-                    candle_stick_create(ui_chart, STOCK_SYMBOL);
-                }
+            if (DataFetcher::updateData()) {
+                // Only update chart if new data was fetched
+                EnhancedCandleStick::update(ui_chart, STOCK_SYMBOL);
             }
         }
         lastStockUpdate = millis();
@@ -118,8 +181,23 @@ void loop() {
     if (millis() - lastWiFiCheck > 30000) { // Check every 30 seconds
         if (WiFi.status() != WL_CONNECTED) {
             Serial.println("WiFi disconnected, attempting to reconnect...");
+            StockWebServer::stop(); // Stop web server during reconnection
             connectWiFi();
+            
+            // Restart web server if WiFi reconnected
+            if (WiFi.status() == WL_CONNECTED) {
+                StockWebServer::begin();
+            }
         }
         lastWiFiCheck = millis();
+    }
+    
+    // Periodic chart refresh (every 5 minutes) to ensure UI stays updated
+    static unsigned long lastChartRefresh = 0;
+    if (millis() - lastChartRefresh > 300000) { // 5 minutes
+        if (WiFi.status() == WL_CONNECTED) {
+            EnhancedCandleStick::update(ui_chart, STOCK_SYMBOL);
+        }
+        lastChartRefresh = millis();
     }
 }
