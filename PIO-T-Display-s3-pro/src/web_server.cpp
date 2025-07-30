@@ -128,8 +128,8 @@ button:hover{background:#0056b3}
 <h2>Stock Configuration</h2>
 <div class="form-group">
 <label>Stock Symbol:</label>
-<input type="text" id="symbol" class="symbol-input" maxlength="6" placeholder="Enter symbol (e.g., AAPL)">
-<div class="symbol-help">Enter up to 6 characters. Symbol will be automatically capitalized.</div>
+<input type="text" id="symbol" class="symbol-input" maxlength="8" placeholder="Enter symbol (e.g., AAPL)">
+<div class="symbol-help">Enter up to 8 characters. Symbol will be automatically capitalized.</div>
 <div class="popular-symbols">
 <strong>Popular symbols:</strong><br>
 <span class="symbol-button" onclick="setSymbol('SPY')">SPY</span>
@@ -237,9 +237,9 @@ document.getElementById('symbol').addEventListener('input', function(e) {
     let value = e.target.value.toUpperCase();
     // Remove any non-alphanumeric characters except hyphens (for crypto pairs like BTC-USD)
     value = value.replace(/[^A-Z0-9-]/g, '');
-    // Limit to 6 characters
-    if (value.length > 6) {
-        value = value.substring(0, 6);
+    // Limit to 8 characters
+    if (value.length > 8) {
+        value = value.substring(0, 8);
     }
     e.target.value = value;
 });
@@ -329,8 +329,8 @@ if (!symbol) {
     showStatus('Please enter a stock symbol', 'error');
     return;
 }
-if (symbol.length > 6) {
-    symbol = symbol.substring(0, 6);
+if (symbol.length > 8) {
+    symbol = symbol.substring(0, 8);
 }
 // Basic validation: must contain at least one letter
 if (!/[A-Z]/.test(symbol)) {

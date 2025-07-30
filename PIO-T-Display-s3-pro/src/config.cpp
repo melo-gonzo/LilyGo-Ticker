@@ -115,7 +115,7 @@ void saveConfig() {
 
 bool validateSymbol(const String& symbol) {
     // Basic validation for stock symbols
-    if (symbol.length() == 0 || symbol.length() > 6) {
+    if (symbol.length() == 0 || symbol.length() > 8) {
         return false;
     }
     
