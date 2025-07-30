@@ -19,7 +19,7 @@ String YAHOO_RANGE = "1d";     // Default to 1 day range
 int BARS_TO_SHOW = 50;
 
 // Network configuration - Use your specified defaults
-bool USE_STATIC_IP = false;
+bool USE_STATIC_IP = true;
 String STATIC_IP = "192.168.4.184";
 String GATEWAY_IP = "192.168.4.1";
 String SUBNET_MASK = "255.255.255.0";

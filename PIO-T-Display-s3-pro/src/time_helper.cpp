@@ -81,7 +81,7 @@ void updateTimeAndDate() {
     // Only update time strings every second
     static unsigned long lastTimeStringUpdate = 0;
     static char timeStr[9] = "00:00:00";
-    static char dateStr[11] = "0000-00-00";
+    static char dateStr[9] = "00-00-00";  // Changed to MM-DD-YY format
     
     // Update the time strings once per second
     if (millis() - lastTimeStringUpdate > 1000) {
@@ -90,9 +90,16 @@ void updateTimeAndDate() {
         localtime_r(&now, &timeinfo);
         
         strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
-        strftime(dateStr, sizeof(dateStr), "%Y-%m-%d", &timeinfo);
+        strftime(dateStr, sizeof(dateStr), "%m-%d-%y", &timeinfo);  // MM-DD-YY format
         
         lastTimeStringUpdate = millis();
+        
+        // Debug output for date format verification (remove after testing)
+        static unsigned long lastDebugOutput = 0;
+        if (millis() - lastDebugOutput > 30000) { // Debug every 30 seconds
+            Serial.printf("Date display format: %s (MM-DD-YY)\n", dateStr);
+            lastDebugOutput = millis();
+        }
     }
     
     // Check if we have an info panel on the chart screen
