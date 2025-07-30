@@ -205,9 +205,23 @@ void EnhancedCandleStick::draw_candlestick(lv_obj_t *parent, int index, const en
     lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
     lv_coord_t chart_height = lv_obj_get_height(parent);
     
-    int candle_width = (chart_width / total_bars) - CANDLE_PADDING;
-    candle_width = max(1, candle_width); // Ensure minimum width of 1 pixel
-    int x = index * (candle_width + CANDLE_PADDING);
+    // Calculate candle width based on actual bars to show, not MAX_CANDLES
+    int available_width = chart_width - (CANDLE_PADDING * (total_bars - 1));
+    int candle_width = available_width / total_bars;
+    
+    // Ensure minimum width of 1 pixel
+    candle_width = std::max(1, candle_width);
+    
+    // Recalculate spacing if needed to fit all bars
+    int actual_spacing = CANDLE_PADDING;
+    int total_width_needed = (candle_width * total_bars) + (actual_spacing * (total_bars - 1));
+    
+    if (total_width_needed > chart_width) {
+        // Reduce padding if necessary
+        actual_spacing = std::max(0, (chart_width - (candle_width * total_bars)) / std::max(1, (total_bars - 1)));
+    }
+    
+    int x = index * (candle_width + actual_spacing);
     
     int y_top = chart_height * (1.0f - (candle.high - min_price) / (max_price - min_price));
     int y_bottom = chart_height * (1.0f - (candle.low - min_price) / (max_price - min_price));

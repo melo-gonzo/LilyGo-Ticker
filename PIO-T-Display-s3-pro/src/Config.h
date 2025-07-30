@@ -5,6 +5,8 @@
 
 #define TIME_ZONE "PST8PDT" // Set to the desired time zone
 #define MAX_CANDLES 130  // Define this as a constant
+#define INFO_PANEL_WIDTH 80
+#define CANDLE_PADDING 0
 
 // Stock data configuration
 extern bool USE_TEST_DATA;
@@ -42,6 +44,7 @@ bool validateInterval(const String& interval);
 bool validateRange(const String& range);
 bool validateIP(const String& ip);
 int calculateMaxBars(int screenWidth, int panelWidth = 80, int candleMinWidth = 1);
+int getScreenWidth();
 String getConfigJSON();
 bool setConfigFromJSON(const String& json);
 

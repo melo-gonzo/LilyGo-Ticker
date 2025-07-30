@@ -1,6 +1,7 @@
 #include "config.h"
 #include <ArduinoJson.h>
 #include <Preferences.h>
+#include <lvgl.h>
 
 // Default configuration values
 bool USE_TEST_DATA = false;
@@ -15,9 +16,9 @@ String YAHOO_INTERVAL = "1m";  // Default to 1 minute intervals
 String YAHOO_RANGE = "1d";     // Default to 1 day range
 
 // Chart display configuration
-int BARS_TO_SHOW = 50;  // Added missing definition
+int BARS_TO_SHOW = 50;
 
-// Network configuration
+// Network configuration - Use your specified defaults
 bool USE_STATIC_IP = false;
 String STATIC_IP = "192.168.4.184";
 String GATEWAY_IP = "192.168.4.1";
@@ -53,6 +54,8 @@ void loadConfig() {
     YAHOO_INTERVAL = preferences.getString("yahooInterval", "1m");
     YAHOO_RANGE = preferences.getString("yahooRange", "1d");
     BARS_TO_SHOW = preferences.getInt("barsToShow", 50);
+    
+    // Network configuration with your defaults
     USE_STATIC_IP = preferences.getBool("useStaticIP", false);
     STATIC_IP = preferences.getString("staticIP", "192.168.4.184");
     GATEWAY_IP = preferences.getString("gatewayIP", "192.168.4.1");
@@ -68,19 +71,29 @@ void loadConfig() {
         YAHOO_RANGE = "1d";
     }
     
-    // Validate bars to show (assume 320px width, 80px panel = 240px chart area)
-    int maxBars = calculateMaxBars(320, 80, 2);
+    // Validate bars to show using actual screen dimensions
+    int actualScreenWidth = getScreenWidth();
+    int maxBars = calculateMaxBars(actualScreenWidth, INFO_PANEL_WIDTH, 1);
+    
     if (BARS_TO_SHOW < 1 || BARS_TO_SHOW > maxBars) {
         BARS_TO_SHOW = min(50, maxBars);
+        Serial.println("BARS_TO_SHOW was out of range, adjusted to: " + String(BARS_TO_SHOW));
     }
     
     Serial.println("Configuration loaded:");
     Serial.println("Symbol: " + STOCK_SYMBOL);
     Serial.println("Interval: " + YAHOO_INTERVAL);
     Serial.println("Range: " + YAHOO_RANGE);
-    Serial.println("Bars to show: " + String(BARS_TO_SHOW));
+    Serial.println("Bars to show: " + String(BARS_TO_SHOW) + " (max: " + String(maxBars) + ")");
+    Serial.println("Screen width: " + String(actualScreenWidth));
     Serial.println("Use Test Data: " + String(USE_TEST_DATA));
     Serial.println("Use Intraday: " + String(USE_INTRADAY_DATA));
+    Serial.println("Network - Use Static IP: " + String(USE_STATIC_IP));
+    if (USE_STATIC_IP) {
+        Serial.println("Static IP: " + STATIC_IP);
+        Serial.println("Gateway: " + GATEWAY_IP);
+        Serial.println("Subnet: " + SUBNET_MASK);
+    }
 }
 
 void saveConfig() {
@@ -123,9 +136,70 @@ bool validateRange(const String& range) {
     return false;
 }
 
+bool validateIP(const String& ip) {
+    // Basic IP validation - check for 4 parts separated by dots
+    int dotCount = 0;
+    int partStart = 0;
+    
+    for (int i = 0; i <= ip.length(); i++) {
+        if (i == ip.length() || ip.charAt(i) == '.') {
+            if (i == partStart) return false; // Empty part
+            
+            String part = ip.substring(partStart, i);
+            int value = part.toInt();
+            
+            // Check if conversion was successful and value is in valid range
+            if (part != String(value) || value < 0 || value > 255) {
+                return false;
+            }
+            
+            dotCount++;
+            partStart = i + 1;
+        }
+    }
+    
+    return dotCount == 4; // Should have exactly 4 parts
+}
+
 int calculateMaxBars(int screenWidth, int panelWidth, int candleMinWidth) {
     int chartWidth = screenWidth - panelWidth;
-    return chartWidth / candleMinWidth;
+    
+    // Calculate max bars considering minimum candle width and padding
+    // Formula: chartWidth = (candleWidth * numBars) + (padding * (numBars - 1))
+    // Solving for numBars: numBars = (chartWidth + padding) / (candleWidth + padding)
+    
+    int padding = CANDLE_PADDING; // Use the actual padding from the header
+    int maxBars;
+    
+    if (padding == 0) {
+        // Simple case: no padding
+        maxBars = chartWidth / candleMinWidth;
+    } else {
+        // With padding: solve the equation
+        maxBars = (chartWidth + padding) / (candleMinWidth + padding);
+    }
+    
+    // Ensure reasonable bounds
+    maxBars = max(10, maxBars);  // Minimum of 10 bars
+    maxBars = min(500, maxBars); // Increased maximum to 500 bars for higher resolution displays
+    
+    Serial.println("calculateMaxBars:");
+    Serial.println("  Screen width: " + String(screenWidth));
+    Serial.println("  Panel width: " + String(panelWidth)); 
+    Serial.println("  Chart width: " + String(chartWidth));
+    Serial.println("  Min candle width: " + String(candleMinWidth));
+    Serial.println("  Padding: " + String(padding));
+    Serial.println("  Calculated max bars: " + String(maxBars));
+    
+    return maxBars;
+}
+
+int getScreenWidth() {
+    lv_disp_t* disp = lv_disp_get_default();
+    if (disp != NULL) {
+        return lv_disp_get_hor_res(disp);
+    }
+    return 320; // Fallback for T-Display-AMOLED
 }
 
 String getConfigJSON() {
@@ -140,7 +214,12 @@ String getConfigJSON() {
     doc["yahooInterval"] = YAHOO_INTERVAL;
     doc["yahooRange"] = YAHOO_RANGE;
     doc["barsToShow"] = BARS_TO_SHOW;
-    doc["maxBars"] = calculateMaxBars(320, 80, 2); // Provide max for validation
+    
+    // Use actual screen width instead of hardcoded 320
+    int actualScreenWidth = getScreenWidth();
+    doc["maxBars"] = calculateMaxBars(actualScreenWidth, INFO_PANEL_WIDTH, 1);
+    doc["screenWidth"] = actualScreenWidth; // Add this for debugging
+    
     doc["useStaticIP"] = USE_STATIC_IP;
     doc["staticIP"] = STATIC_IP;
     doc["gatewayIP"] = GATEWAY_IP;
@@ -209,7 +288,7 @@ bool setConfigFromJSON(const String& json) {
     }
     if (doc["barsToShow"].is<int>()) {
         int bars = doc["barsToShow"];
-        int maxBars = calculateMaxBars(320, 80, 2);
+        int maxBars = calculateMaxBars(getScreenWidth(), INFO_PANEL_WIDTH, 1);
         if (bars >= 1 && bars <= maxBars) {
             BARS_TO_SHOW = bars;
         }
@@ -218,13 +297,22 @@ bool setConfigFromJSON(const String& json) {
         USE_STATIC_IP = doc["useStaticIP"];
     }
     if (doc["staticIP"].is<String>()) {
-        STATIC_IP = doc["staticIP"].as<String>();
+        String ip = doc["staticIP"].as<String>();
+        if (validateIP(ip)) {
+            STATIC_IP = ip;
+        }
     }
     if (doc["gatewayIP"].is<String>()) {
-        GATEWAY_IP = doc["gatewayIP"].as<String>();
+        String ip = doc["gatewayIP"].as<String>();
+        if (validateIP(ip)) {
+            GATEWAY_IP = ip;
+        }
     }
     if (doc["subnetMask"].is<String>()) {
-        SUBNET_MASK = doc["subnetMask"].as<String>();
+        String mask = doc["subnetMask"].as<String>();
+        if (validateIP(mask)) {  // subnet mask follows same format as IP
+            SUBNET_MASK = mask;
+        }
     }
     
     // Save the updated configuration

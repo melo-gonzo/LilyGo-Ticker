@@ -21,19 +21,41 @@ static String last_interval = "";
 static String last_range = "";
 static int last_bars_to_show = 0;
 
+// Helper function to parse IP string to IPAddress
+IPAddress parseIPAddress(const String& ipStr) {
+    IPAddress ip;
+    if (ip.fromString(ipStr)) {
+        return ip;
+    }
+    // Return default IP if parsing fails
+    return IPAddress(192, 168, 4, 184);
+}
+
 void connectWiFi() {
     Serial.println("Connecting to WiFi...");
     
-    // Configure static IP (modify these values for your network)
-    IPAddress local_IP(192, 168, 4, 184);     // Set your desired static IP
-    IPAddress gateway(192, 168, 4, 1);        // Your router's IP
-    IPAddress subnet(255, 255, 255, 0);       // Subnet mask
-    IPAddress primaryDNS(8, 8, 8, 8);         // Google DNS
-    IPAddress secondaryDNS(8, 8, 4, 4);       // Google DNS secondary
-    
-    // Configure static IP
-    if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
-        Serial.println("Static IP configuration failed");
+    // Use configuration variables instead of hardcoded values
+    if (USE_STATIC_IP) {
+        Serial.println("Configuring static IP...");
+        
+        IPAddress local_IP = parseIPAddress(STATIC_IP);
+        IPAddress gateway = parseIPAddress(GATEWAY_IP);
+        IPAddress subnet = parseIPAddress(SUBNET_MASK);
+        IPAddress primaryDNS(8, 8, 8, 8);         // Google DNS
+        IPAddress secondaryDNS(8, 8, 4, 4);       // Google DNS secondary
+        
+        Serial.println("Static IP: " + STATIC_IP);
+        Serial.println("Gateway: " + GATEWAY_IP);
+        Serial.println("Subnet: " + SUBNET_MASK);
+        
+        // Configure static IP
+        if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
+            Serial.println("Static IP configuration failed");
+        } else {
+            Serial.println("Static IP configuration successful");
+        }
+    } else {
+        Serial.println("Using DHCP...");
     }
     
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -53,6 +75,10 @@ void connectWiFi() {
         Serial.println(WiFi.gatewayIP());
         Serial.print("Subnet: ");
         Serial.println(WiFi.subnetMask());
+        Serial.print("DNS 1: ");
+        Serial.println(WiFi.dnsIP(0));
+        Serial.print("DNS 2: ");
+        Serial.println(WiFi.dnsIP(1));
     } else {
         Serial.println("WiFi connection failed");
     }
@@ -133,7 +159,7 @@ void setup() {
     last_range = YAHOO_RANGE;
     last_bars_to_show = BARS_TO_SHOW;
     
-    // Connect to WiFi
+    // Connect to WiFi using configuration
     connectWiFi();
     
     if (WiFi.status() == WL_CONNECTED) {
