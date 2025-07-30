@@ -36,6 +36,8 @@ private:
     static bool shouldCreateNewCandle(time_t current_time, time_t last_candle_time, int interval_seconds);
     static void buildIntradayCandle(float price, time_t timestamp);
     static bool isDataStale();
+    static String getSmallerRange(const String& range);
+    static bool fetchFallbackData(const String& symbol);
     
 public:
     static bool initialize(const String& symbol);

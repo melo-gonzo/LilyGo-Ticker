@@ -74,10 +74,13 @@ void EnhancedCandleStick::create(lv_obj_t *parent, const String& symbol) {
     // Draw grid lines
     draw_price_gridlines(chart_container, draw_min, draw_max);
     
-    // Draw candlesticks
-    for (int i = 0; i < num_candles; i++) {
-        int index = (newest_index - num_candles + i + 1 + MAX_CANDLES) % MAX_CANDLES;
-        draw_candlestick(chart_container, i, candles[index], draw_min, draw_max);
+    // Draw candlesticks - only show the configured number of bars
+    int barsToShow = min(BARS_TO_SHOW, num_candles);
+    int startIndex = max(0, num_candles - barsToShow);
+    
+    for (int i = 0; i < barsToShow; i++) {
+        int dataIndex = (newest_index - barsToShow + i + 1 + MAX_CANDLES) % MAX_CANDLES;
+        draw_candlestick(chart_container, i, candles[dataIndex], draw_min, draw_max, barsToShow);
     }
     
     // Draw current price line
@@ -198,11 +201,12 @@ void EnhancedCandleStick::update_info_panel(lv_obj_t *chart_container, const Str
 }
 
 void EnhancedCandleStick::draw_candlestick(lv_obj_t *parent, int index, const enhanced_candle_t& candle, 
-                                         float min_price, float max_price) {
+                                         float min_price, float max_price, int total_bars) {
     lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
     lv_coord_t chart_height = lv_obj_get_height(parent);
     
-    int candle_width = (chart_width / MAX_CANDLES) - CANDLE_PADDING;
+    int candle_width = (chart_width / total_bars) - CANDLE_PADDING;
+    candle_width = max(1, candle_width); // Ensure minimum width of 1 pixel
     int x = index * (candle_width + CANDLE_PADDING);
     
     int y_top = chart_height * (1.0f - (candle.high - min_price) / (max_price - min_price));

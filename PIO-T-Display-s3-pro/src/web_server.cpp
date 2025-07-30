@@ -118,6 +118,11 @@ button:hover{background:#0056b3}
 <input type="number" id="candleDuration" min="1" max="86400" value="180">
 </div>
 <div class="form-group">
+<label>Bars to Show:</label>
+<input type="number" id="barsToShow" min="1" max="120" value="50">
+<small style="color:#666;font-size:12px;">Max bars depends on screen resolution</small>
+</div>
+<div class="form-group">
 <div class="checkbox-group">
 <input type="checkbox" id="useTestData">
 <label>Use Test Data</label>
@@ -150,6 +155,8 @@ document.getElementById('yahooInterval').value = config.yahooInterval || '1m';
 document.getElementById('yahooRange').value = config.yahooRange || '1d';
 document.getElementById('updateInterval').value = config.updateInterval || 1;
 document.getElementById('candleDuration').value = config.candleDuration || 180;
+document.getElementById('barsToShow').value = config.barsToShow || 50;
+document.getElementById('barsToShow').max = config.maxBars || 120;
 document.getElementById('useTestData').checked = config.useTestData || false;
 document.getElementById('useIntraday').checked = config.useIntraday !== false;
 document.getElementById('enforceHours').checked = config.enforceHours !== false;
@@ -163,6 +170,7 @@ yahooInterval: document.getElementById('yahooInterval').value,
 yahooRange: document.getElementById('yahooRange').value,
 updateInterval: parseInt(document.getElementById('updateInterval').value),
 candleDuration: parseInt(document.getElementById('candleDuration').value),
+barsToShow: parseInt(document.getElementById('barsToShow').value),
 useTestData: document.getElementById('useTestData').checked,
 useIntraday: document.getElementById('useIntraday').checked,
 enforceHours: document.getElementById('enforceHours').checked

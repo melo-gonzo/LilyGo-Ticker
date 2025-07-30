@@ -22,7 +22,7 @@ class EnhancedCandleStick {
 private:
     static lv_obj_t* find_obj_by_id(lv_obj_t *parent, uint32_t id);
     static void draw_candlestick(lv_obj_t *parent, int index, const enhanced_candle_t& candle, 
-                               float min_price, float max_price);
+                               float min_price, float max_price, int total_bars);  // Added total_bars parameter
     static void draw_current_price_line(lv_obj_t *parent, float current_price, 
                                       float min_price, float max_price);
     static void draw_price_gridlines(lv_obj_t *parent, float min_price, float max_price);

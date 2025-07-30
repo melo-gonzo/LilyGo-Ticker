@@ -19,6 +19,7 @@ static bool data_needs_refresh = false;
 static String last_symbol = "";
 static String last_interval = "";
 static String last_range = "";
+static int last_bars_to_show = 0;
 
 void connectWiFi() {
     Serial.println("Connecting to WiFi...");
@@ -61,17 +62,29 @@ void checkConfigChanges() {
     // Check if any critical parameters have changed
     if (last_symbol != STOCK_SYMBOL || 
         last_interval != YAHOO_INTERVAL || 
-        last_range != YAHOO_RANGE) {
+        last_range != YAHOO_RANGE ||
+        last_bars_to_show != BARS_TO_SHOW) {
         
-        Serial.println("Configuration changed, refreshing data...");
+        Serial.println("Configuration changed, refreshing display...");
         Serial.println("Symbol: " + last_symbol + " -> " + STOCK_SYMBOL);
         Serial.println("Interval: " + last_interval + " -> " + YAHOO_INTERVAL);
         Serial.println("Range: " + last_range + " -> " + YAHOO_RANGE);
+        Serial.println("Bars: " + String(last_bars_to_show) + " -> " + String(BARS_TO_SHOW));
         
-        data_needs_refresh = true;
+        // Only refresh data if symbol, interval, or range changed
+        if (last_symbol != STOCK_SYMBOL || 
+            last_interval != YAHOO_INTERVAL || 
+            last_range != YAHOO_RANGE) {
+            data_needs_refresh = true;
+        }
+        
         last_symbol = STOCK_SYMBOL;
         last_interval = YAHOO_INTERVAL;
         last_range = YAHOO_RANGE;
+        last_bars_to_show = BARS_TO_SHOW;
+        
+        // Always refresh chart display for bars change
+        EnhancedCandleStick::create(ui_chart, STOCK_SYMBOL);
     }
 }
 
@@ -118,6 +131,7 @@ void setup() {
     last_symbol = STOCK_SYMBOL;
     last_interval = YAHOO_INTERVAL;
     last_range = YAHOO_RANGE;
+    last_bars_to_show = BARS_TO_SHOW;
     
     // Connect to WiFi
     connectWiFi();

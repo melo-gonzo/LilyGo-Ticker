@@ -37,6 +37,7 @@ bool DataFetcher::fetchInitialData(const String& symbol, const String& interval,
     
     Serial.println("URL: " + url);
     http.begin(url);
+    http.setTimeout(10000); // 10 second timeout
     
     int httpCode = http.GET();
     if (httpCode != HTTP_CODE_OK) {
@@ -46,13 +47,35 @@ bool DataFetcher::fetchInitialData(const String& symbol, const String& interval,
     }
     
     String payload = http.getString();
+    int payloadSize = payload.length();
+    Serial.println("Response size: " + String(payloadSize) + " bytes");
+    
     http.end();
     
+    // Check if payload is too large for ESP32 to handle
+    if (payloadSize > 50000) { // 50KB limit
+        Serial.println("Response too large (" + String(payloadSize) + " bytes), trying smaller range...");
+        
+        // Try with a smaller range
+        String smallerRange = getSmallerRange(range);
+        if (smallerRange != range) {
+            Serial.println("Retrying with smaller range: " + smallerRange);
+            return fetchInitialData(symbol, interval, smallerRange);
+        } else {
+            Serial.println("Cannot reduce range further, using fallback");
+            return fetchFallbackData(symbol);
+        }
+    }
+    
+    // Use standard JsonDocument with automatic sizing
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, payload);
     if (error) {
         Serial.println("JSON parsing failed: " + String(error.c_str()));
-        return false;
+        Serial.println("Payload size was: " + String(payloadSize));
+        
+        // Try with fallback data if JSON parsing fails
+        return fetchFallbackData(symbol);
     }
     
     // Check if we have valid data
@@ -98,6 +121,68 @@ bool DataFetcher::fetchInitialData(const String& symbol, const String& interval,
     initial_data_loaded = true;
     
     Serial.println("Loaded " + String(num_candles) + " candles. Current price: " + String(current_price));
+    return true;
+}
+
+String DataFetcher::getSmallerRange(const String& range) {
+    // Return a smaller range to reduce data size
+    if (range == "1y") return "6mo";
+    if (range == "6mo") return "3mo";
+    if (range == "3mo") return "1mo";
+    if (range == "1mo") return "5d";
+    if (range == "5d") return "1d";
+    return range; // Can't reduce further
+}
+
+bool DataFetcher::fetchFallbackData(const String& symbol) {
+    Serial.println("Using fallback: fetching 1d data with daily interval");
+    
+    HTTPClient http;
+    String url = "https://query1.finance.yahoo.com/v8/finance/chart/" + symbol + "?interval=1d&range=1d";
+    
+    http.begin(url);
+    int httpCode = http.GET();
+    if (httpCode != HTTP_CODE_OK) {
+        Serial.println("Fallback request failed");
+        http.end();
+        return false;
+    }
+    
+    String payload = http.getString();
+    http.end();
+    
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, payload);
+    if (error) {
+        Serial.println("Fallback JSON parsing failed");
+        return false;
+    }
+    
+    // Process fallback data (simplified)
+    JsonArray timestamps = doc["chart"]["result"][0]["timestamp"].as<JsonArray>();
+    JsonObject quote = doc["chart"]["result"][0]["indicators"]["quote"][0];
+    JsonArray closes = quote["close"].as<JsonArray>();
+    
+    if (timestamps.size() == 0) {
+        return false;
+    }
+    
+    // Create a single candle from the most recent data
+    reset();
+    enhanced_candle_t candle;
+    int lastIndex = timestamps.size() - 1;
+    candle.timestamp = timestamps[lastIndex].as<long>();
+    candle.open = quote["open"][lastIndex].as<float>();
+    candle.high = quote["high"][lastIndex].as<float>();
+    candle.low = quote["low"][lastIndex].as<float>();
+    candle.close = closes[lastIndex].as<float>();
+    candle.is_complete = true;
+    
+    updateCircularBuffer(candle);
+    current_price = candle.close;
+    initial_data_loaded = true;
+    
+    Serial.println("Fallback data loaded: 1 candle, price: " + String(current_price));
     return true;
 }
 

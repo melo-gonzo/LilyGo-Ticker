@@ -8,11 +8,20 @@ bool USE_INTRADAY_DATA = true;
 int INTRADAY_UPDATE_INTERVAL = 1;
 int CANDLE_COLLECTION_DURATION = 180;
 String STOCK_SYMBOL = "SPY";
-bool ENFORCE_MARKET_HOURS = false;
+bool ENFORCE_MARKET_HOURS = true;
 
 // Yahoo Finance API parameters
 String YAHOO_INTERVAL = "1m";  // Default to 1 minute intervals
 String YAHOO_RANGE = "1d";     // Default to 1 day range
+
+// Chart display configuration
+int BARS_TO_SHOW = 50;  // Added missing definition
+
+// Network configuration
+bool USE_STATIC_IP = false;
+String STATIC_IP = "192.168.4.184";
+String GATEWAY_IP = "192.168.4.1";
+String SUBNET_MASK = "255.255.255.0";
 
 // Valid options for validation and web interface
 const char* VALID_INTERVALS[] = {
@@ -43,6 +52,11 @@ void loadConfig() {
     ENFORCE_MARKET_HOURS = preferences.getBool("enforceHours", true);
     YAHOO_INTERVAL = preferences.getString("yahooInterval", "1m");
     YAHOO_RANGE = preferences.getString("yahooRange", "1d");
+    BARS_TO_SHOW = preferences.getInt("barsToShow", 50);
+    USE_STATIC_IP = preferences.getBool("useStaticIP", false);
+    STATIC_IP = preferences.getString("staticIP", "192.168.4.184");
+    GATEWAY_IP = preferences.getString("gatewayIP", "192.168.4.1");
+    SUBNET_MASK = preferences.getString("subnetMask", "255.255.255.0");
     
     preferences.end();
     
@@ -54,10 +68,17 @@ void loadConfig() {
         YAHOO_RANGE = "1d";
     }
     
+    // Validate bars to show (assume 320px width, 80px panel = 240px chart area)
+    int maxBars = calculateMaxBars(320, 80, 2);
+    if (BARS_TO_SHOW < 1 || BARS_TO_SHOW > maxBars) {
+        BARS_TO_SHOW = min(50, maxBars);
+    }
+    
     Serial.println("Configuration loaded:");
     Serial.println("Symbol: " + STOCK_SYMBOL);
     Serial.println("Interval: " + YAHOO_INTERVAL);
     Serial.println("Range: " + YAHOO_RANGE);
+    Serial.println("Bars to show: " + String(BARS_TO_SHOW));
     Serial.println("Use Test Data: " + String(USE_TEST_DATA));
     Serial.println("Use Intraday: " + String(USE_INTRADAY_DATA));
 }
@@ -73,6 +94,11 @@ void saveConfig() {
     preferences.putBool("enforceHours", ENFORCE_MARKET_HOURS);
     preferences.putString("yahooInterval", YAHOO_INTERVAL);
     preferences.putString("yahooRange", YAHOO_RANGE);
+    preferences.putInt("barsToShow", BARS_TO_SHOW);
+    preferences.putBool("useStaticIP", USE_STATIC_IP);
+    preferences.putString("staticIP", STATIC_IP);
+    preferences.putString("gatewayIP", GATEWAY_IP);
+    preferences.putString("subnetMask", SUBNET_MASK);
     
     preferences.end();
     
@@ -97,6 +123,11 @@ bool validateRange(const String& range) {
     return false;
 }
 
+int calculateMaxBars(int screenWidth, int panelWidth, int candleMinWidth) {
+    int chartWidth = screenWidth - panelWidth;
+    return chartWidth / candleMinWidth;
+}
+
 String getConfigJSON() {
     JsonDocument doc;
     
@@ -108,19 +139,25 @@ String getConfigJSON() {
     doc["enforceHours"] = ENFORCE_MARKET_HOURS;
     doc["yahooInterval"] = YAHOO_INTERVAL;
     doc["yahooRange"] = YAHOO_RANGE;
+    doc["barsToShow"] = BARS_TO_SHOW;
+    doc["maxBars"] = calculateMaxBars(320, 80, 2); // Provide max for validation
+    doc["useStaticIP"] = USE_STATIC_IP;
+    doc["staticIP"] = STATIC_IP;
+    doc["gatewayIP"] = GATEWAY_IP;
+    doc["subnetMask"] = SUBNET_MASK;
     
     // Add valid options for dropdowns
-    JsonArray intervals = doc.createNestedArray("validIntervals");
+    JsonArray intervals = doc["validIntervals"].to<JsonArray>();
     for (int i = 0; i < VALID_INTERVALS_COUNT; i++) {
         intervals.add(VALID_INTERVALS[i]);
     }
     
-    JsonArray ranges = doc.createNestedArray("validRanges");
+    JsonArray ranges = doc["validRanges"].to<JsonArray>();
     for (int i = 0; i < VALID_RANGES_COUNT; i++) {
         ranges.add(VALID_RANGES[i]);
     }
     
-    JsonArray symbols = doc.createNestedArray("validSymbols");
+    JsonArray symbols = doc["validSymbols"].to<JsonArray>();
     for (int i = 0; i < VALID_SYMBOLS_COUNT; i++) {
         symbols.add(VALID_SYMBOLS[i]);
     }
@@ -140,56 +177,57 @@ bool setConfigFromJSON(const String& json) {
     }
     
     // Update configuration values
-    if (doc.containsKey("useTestData")) {
+    if (doc["useTestData"].is<bool>()) {
         USE_TEST_DATA = doc["useTestData"];
     }
-    if (doc.containsKey("useIntraday")) {
+    if (doc["useIntraday"].is<bool>()) {
         USE_INTRADAY_DATA = doc["useIntraday"];
     }
-    if (doc.containsKey("updateInterval")) {
+    if (doc["updateInterval"].is<int>()) {
         INTRADAY_UPDATE_INTERVAL = doc["updateInterval"];
     }
-    if (doc.containsKey("candleDuration")) {
+    if (doc["candleDuration"].is<int>()) {
         CANDLE_COLLECTION_DURATION = doc["candleDuration"];
     }
-    if (doc.containsKey("symbol")) {
+    if (doc["symbol"].is<String>()) {
         STOCK_SYMBOL = doc["symbol"].as<String>();
     }
-    if (doc.containsKey("enforceHours")) {
+    if (doc["enforceHours"].is<bool>()) {
         ENFORCE_MARKET_HOURS = doc["enforceHours"];
     }
-    if (doc.containsKey("yahooInterval")) {
+    if (doc["yahooInterval"].is<String>()) {
         String interval = doc["yahooInterval"].as<String>();
         if (validateInterval(interval)) {
             YAHOO_INTERVAL = interval;
         }
     }
-    if (doc.containsKey("yahooRange")) {
+    if (doc["yahooRange"].is<String>()) {
         String range = doc["yahooRange"].as<String>();
         if (validateRange(range)) {
             YAHOO_RANGE = range;
         }
+    }
+    if (doc["barsToShow"].is<int>()) {
+        int bars = doc["barsToShow"];
+        int maxBars = calculateMaxBars(320, 80, 2);
+        if (bars >= 1 && bars <= maxBars) {
+            BARS_TO_SHOW = bars;
+        }
+    }
+    if (doc["useStaticIP"].is<bool>()) {
+        USE_STATIC_IP = doc["useStaticIP"];
+    }
+    if (doc["staticIP"].is<String>()) {
+        STATIC_IP = doc["staticIP"].as<String>();
+    }
+    if (doc["gatewayIP"].is<String>()) {
+        GATEWAY_IP = doc["gatewayIP"].as<String>();
+    }
+    if (doc["subnetMask"].is<String>()) {
+        SUBNET_MASK = doc["subnetMask"].as<String>();
     }
     
     // Save the updated configuration
     saveConfig();
     return true;
 }
-
-//// Test intraday with fake data
-// bool USE_TEST_DATA = true;
-// bool USE_INTRADAY_DATA = true;
-// int INTRADAY_UPDATE_INTERVAL = 1; // 5 // 1 
-// int CANDLE_COLLECTION_DURATION = 6; // 60 // 6
-// const char* STOCK_SYMBOL = "SPY";
-// bool ENFORCE_MARKET_HOURS = false;  
-
-//// Daily data
-// bool USE_TEST_DATA = false;
-// bool USE_INTRADAY_DATA = false;
-// int INTRADAY_UPDATE_INTERVAL = 5; // 5
-// int CANDLE_COLLECTION_DURATION = 60; // 60
-// const char* STOCK_SYMBOL = "SPY";
-// bool ENFORCE_MARKET_HOURS = true;  
-
-
