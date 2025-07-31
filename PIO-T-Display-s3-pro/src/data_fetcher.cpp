@@ -14,18 +14,25 @@ String DataFetcher::current_interval = "";
 String DataFetcher::current_range = "";
 
 bool DataFetcher::initialize(const String& symbol) {
+    // Always reset first to ensure clean state
     reset();
+    
     current_symbol = symbol;
     current_interval = YAHOO_INTERVAL;
     current_range = YAHOO_RANGE;
     
+    Serial.println("Initializing DataFetcher for symbol: " + symbol);
+    Serial.println("Use test data: " + String(USE_TEST_DATA));
+    
     if (USE_TEST_DATA) {
+        Serial.println("Using test data mode");
         initializeTestData();
         return true;
+    } else {
+        Serial.println("Using real data mode");
+        // Fetch initial historical data
+        return fetchInitialData(symbol, YAHOO_INTERVAL, YAHOO_RANGE);
     }
-    
-    // Fetch initial historical data
-    return fetchInitialData(symbol, YAHOO_INTERVAL, YAHOO_RANGE);
 }
 
 bool DataFetcher::fetchInitialData(const String& symbol, const String& interval, const String& range) {
@@ -198,17 +205,19 @@ bool DataFetcher::updateData() {
     last_update_time = now;
     
     if (USE_TEST_DATA) {
+        // Generate new test data point
         float price = getRandomPrice();
         buildIntradayCandle(price, now);
+        Serial.println("Generated test price: " + String(price));
         return true;
     }
     
-    // Check market hours if enforced
+    // Check market hours if enforced (for real data only)
     if (ENFORCE_MARKET_HOURS && !StockTracker::MarketHoursChecker::isMarketOpen()) {
         return false;
     }
     
-    // Fetch current price for intraday candle building
+    // Fetch current price for intraday candle building (real data)
     HTTPClient http;
     String url = "https://query1.finance.yahoo.com/v8/finance/chart/" + current_symbol + 
                  "?interval=1m&range=1d";
@@ -268,19 +277,22 @@ void DataFetcher::buildIntradayCandle(float price, time_t timestamp) {
         newCandle.high = price;
         newCandle.low = price;
         newCandle.close = price;
-        newCandle.is_complete = false;
+        newCandle.is_complete = true; // ALWAYS mark as complete - no orange bars
         
         updateCircularBuffer(newCandle);
+        
+        if (USE_TEST_DATA) {
+            Serial.println("Test data: Created new candle at price " + String(price));
+        }
     } else {
         // Update existing candle
         candles[newest_candle_index].close = price;
         candles[newest_candle_index].high = std::max(candles[newest_candle_index].high, price);
         candles[newest_candle_index].low = std::min(candles[newest_candle_index].low, price);
+        candles[newest_candle_index].is_complete = true; // ALWAYS mark as complete
         
-        // Check if candle should be marked as complete
-        time_t candle_end_time = candles[newest_candle_index].timestamp + interval_seconds;
-        if (timestamp >= candle_end_time) {
-            candles[newest_candle_index].is_complete = true;
+        if (USE_TEST_DATA) {
+            Serial.println("Test data: Updated existing candle, close price: " + String(price));
         }
     }
     
@@ -394,42 +406,97 @@ void DataFetcher::getPriceLevelsForVisibleBars(float* min_price, float* max_pric
     
     Serial.printf("  Final range: %.2f - %.2f\n", *min_price, *max_price);
 }
+
 float DataFetcher::getRandomPrice() {
     static float lastPrice = 250.0;
-    float change = (random(-100, 101) / 100.0) * 2;
+    static bool priceInitialized = false;
+    static int lastCandleCount = 0; // Track if data was reset
+    
+    // Reset price initialization if data was cleared
+    if (num_candles < lastCandleCount) {
+        priceInitialized = false;
+        lastPrice = 250.0;
+        Serial.println("Test data: Price generator reset due to data clear");
+    }
+    lastCandleCount = num_candles;
+    
+    // If we have candles in the buffer, use the most recent close price
+    if (!priceInitialized && num_candles > 0) {
+        lastPrice = candles[newest_candle_index].close;
+        priceInitialized = true;
+        Serial.println("Test data: Initialized price continuation from last candle: " + String(lastPrice));
+    }
+    
+    // Generate realistic price movement (-1% to +1% change)
+    float changePercent = (random(-100, 101) / 10000.0); // -0.01 to +0.01
+    float change = lastPrice * changePercent;
     lastPrice += change;
-    lastPrice = std::max(0.0f, lastPrice);
+    
+    // Ensure price doesn't go negative
+    lastPrice = std::max(0.01f, lastPrice);
+    
     return lastPrice;
 }
 
 void DataFetcher::initializeTestData() {
+    Serial.println("Initializing test data...");
+    
     float base_price = 250.0;
     time_t now;
     time(&now);
     
+    // IMPORTANT: Reset the buffer first to clear any existing real data
     reset();
+    Serial.println("Cleared existing data for test mode");
     
-    // Pre-populate with historical data
-    for (int i = 0; i < MAX_CANDLES - 5; i++) {
+    // Pre-populate with historical test data
+    int test_candles = std::min(MAX_CANDLES - 5, 100); // Generate up to 100 test candles
+    
+    for (int i = 0; i < test_candles; i++) {
         enhanced_candle_t candle;
         
-        float open = base_price + (random(-100, 101) / 100.0) * 2;
-        float close = open + (random(-100, 101) / 100.0) * 1.5;
-        candle.high = std::max(open, close) + (random(0, 51) / 100.0);
-        candle.low = std::min(open, close) - (random(0, 51) / 100.0);
+        // Generate realistic price movements
+        float price_change = (random(-200, 201) / 100.0) * 2; // -4 to +4 change
+        float open = base_price + price_change;
+        
+        // Generate intraday movement
+        float intraday_range = (random(50, 200) / 100.0); // 0.5 to 2.0 range
+        float close_change = (random(-100, 101) / 100.0) * intraday_range;
+        float close = open + close_change;
+        
+        // Ensure prices don't go negative
+        open = std::max(1.0f, open);
+        close = std::max(1.0f, close);
+        
+        // Calculate high and low
+        candle.high = std::max(open, close) + (random(0, 100) / 100.0) * intraday_range;
+        candle.low = std::min(open, close) - (random(0, 100) / 100.0) * intraday_range;
         candle.open = open;
         candle.close = close;
-        candle.timestamp = now - (MAX_CANDLES - 5 - i) * CANDLE_COLLECTION_DURATION;
-        candle.is_complete = true;
         
-        base_price = close;
+        // Ensure low doesn't go negative
+        candle.low = std::max(0.1f, candle.low);
+        
+        // Set timestamp going backwards in time
+        candle.timestamp = now - (test_candles - i) * CANDLE_COLLECTION_DURATION;
+        candle.is_complete = true; // FIXED: Mark all test data as complete
+        
         updateCircularBuffer(candle);
+        base_price = close; // Use close as next base price for continuity
     }
     
     current_price = candles[newest_candle_index].close;
     initial_data_loaded = true;
     
     Serial.println("Test data initialized with " + String(num_candles) + " candles");
+    Serial.println("Final price for continuation: " + String(current_price));
+    
+    // Print some sample data for verification
+    for (int i = 0; i < std::min(3, num_candles); i++) {
+        int idx = (newest_candle_index - i + MAX_CANDLES) % MAX_CANDLES;
+        Serial.printf("Test candle %d: O:%.2f H:%.2f L:%.2f C:%.2f Complete:%d\n", 
+                     i, candles[idx].open, candles[idx].high, candles[idx].low, candles[idx].close, candles[idx].is_complete);
+    }
 }
 
 void DataFetcher::reset() {

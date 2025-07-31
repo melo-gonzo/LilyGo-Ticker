@@ -100,24 +100,8 @@ button:hover{background:#0056b3}
 .popular-symbols{margin-top:10px}
 .symbol-button{background:#f8f9fa;border:1px solid #dee2e6;color:#495057;padding:4px 8px;margin:2px;border-radius:3px;cursor:pointer;display:inline-block;font-size:12px}
 .symbol-button:hover{background:#e9ecef}
-.form-group input[type="number"]:invalid,
-.form-group input[type="number"].invalid {
-    border-color: #dc3545 !important;
-    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
-}
-.form-group input[type="number"]:valid,
-.form-group input[type="number"].valid {
-    border-color: #28a745 !important;
-}
-.bars-limitation-info {
-    background: #e3f2fd;
-    border: 1px solid #90caf9;
-    border-radius: 4px;
-    padding: 10px;
-    margin-top: 10px;
-    font-size: 12px;
-    color: #1565c0;
-}
+.test-data-options{background:#fff3cd;padding:10px;border-radius:4px;margin-top:10px;border:1px solid #ffeaa7}
+.fast-update-note{background:#e8f5e8;padding:8px;border-radius:4px;font-size:12px;color:#2e7d2e;margin-top:5px}
 </style>
 </head>
 <body>
@@ -159,9 +143,15 @@ button:hover{background:#0056b3}
 <h2>Display Settings</h2>
 <div class="form-row">
 <div class="form-group">
-<label>Update Interval (sec):</label>
-<input type="number" id="updateInterval" min="1" max="300" value="1">
-<div style="font-size:12px;color:#666;margin-top:5px;">
+<label>Update Interval:</label>
+<div style="display:flex;gap:10px;">
+<input type="number" id="updateInterval" min="1" value="1" style="flex:1;">
+<select id="updateUnit" style="flex:0 0 80px;">
+<option value="ms">ms</option>
+<option value="sec" selected>sec</option>
+</select>
+</div>
+<div id="updateHelp" style="font-size:12px;color:#666;margin-top:5px;">
 How often to fetch new price data from the market
 </div>
 </div>
@@ -186,6 +176,12 @@ Max bars depends on screen resolution and data buffer
 <div class="checkbox-group">
 <input type="checkbox" id="useTestData">
 <label>Use Test Data</label>
+</div>
+<div id="testDataOptions" class="test-data-options" style="display:none;">
+<strong>Test Data Mode:</strong> You can use very fast update intervals (like 100ms) to see rapid price changes for testing and demos.
+<div class="fast-update-note">
+<strong>💡 Tip:</strong> Try 100-500ms intervals for fast test data simulation!
+</div>
 </div>
 </div>
 <div class="form-group">
@@ -234,12 +230,43 @@ Max bars depends on screen resolution and data buffer
 <script>
 document.addEventListener('DOMContentLoaded', loadConfig);
 
+// Show/hide test data options
+document.getElementById('useTestData').addEventListener('change', function() {
+    const testOptions = document.getElementById('testDataOptions');
+    testOptions.style.display = this.checked ? 'block' : 'none';
+    updateIntervalHelp();
+});
+
+// Update help text based on test data mode and unit
+function updateIntervalHelp() {
+    const isTestMode = document.getElementById('useTestData').checked;
+    const unit = document.getElementById('updateUnit').value;
+    const helpText = document.getElementById('updateHelp');
+    
+    if (isTestMode) {
+        if (unit === 'ms') {
+            helpText.textContent = 'How fast to generate new test data (milliseconds) - try 100-500ms for fast simulation';
+            helpText.style.color = '#2e7d2e';
+        } else {
+            helpText.textContent = 'How fast to generate new test data (seconds)';
+            helpText.style.color = '#2e7d2e';
+        }
+    } else {
+        helpText.textContent = 'How often to fetch new price data from the market (minimum 1 second for real data)';
+        helpText.style.color = '#666';
+        if (unit === 'ms') {
+            // Force back to seconds for real data
+            document.getElementById('updateUnit').value = 'sec';
+        }
+    }
+}
+
+document.getElementById('updateUnit').addEventListener('change', updateIntervalHelp);
+
 // Auto-capitalize and limit symbol input
 document.getElementById('symbol').addEventListener('input', function(e) {
     let value = e.target.value.toUpperCase();
-    // Remove any non-alphanumeric characters except hyphens (for crypto pairs like BTC-USD)
     value = value.replace(/[^A-Z0-9-]/g, '');
-    // Limit to 8 characters
     if (value.length > 8) {
         value = value.substring(0, 8);
     }
@@ -255,24 +282,6 @@ document.getElementById('useStaticIP').addEventListener('change', function() {
     staticFields.style.display = this.checked ? 'block' : 'none';
 });
 
-// Add input validation for bars field
-document.getElementById('barsToShow').addEventListener('input', function(e) {
-    const value = parseInt(e.target.value);
-    const max = parseInt(e.target.max);
-    const min = parseInt(e.target.min) || 1;
-    
-    if (value > max) {
-        e.target.style.borderColor = '#dc3545';
-        e.target.title = `Maximum allowed: ${max}`;
-    } else if (value < min) {
-        e.target.style.borderColor = '#dc3545';
-        e.target.title = `Minimum allowed: ${min}`;
-    } else {
-        e.target.style.borderColor = '#28a745';
-        e.target.title = '';
-    }
-});
-
 async function loadConfig(){
 try{
 const response = await fetch('/config');
@@ -280,40 +289,33 @@ const config = await response.json();
 document.getElementById('symbol').value = config.symbol || 'SPY';
 document.getElementById('yahooInterval').value = config.yahooInterval || '1m';
 document.getElementById('yahooRange').value = config.yahooRange || '1d';
-document.getElementById('updateInterval').value = config.updateInterval || 1;
-// Remove: document.getElementById('candleDuration').value = config.candleDuration || 180;
+
+// Handle update interval with units
+let updateMs = config.updateInterval || 1000;
+if (updateMs < 1000) {
+    document.getElementById('updateInterval').value = updateMs;
+    document.getElementById('updateUnit').value = 'ms';
+} else {
+    document.getElementById('updateInterval').value = Math.round(updateMs / 1000);
+    document.getElementById('updateUnit').value = 'sec';
+}
+
 document.getElementById('barsToShow').value = config.barsToShow || 50;
 
-// Show computed candle duration
 const computedDuration = config.computedCandleDuration || 120;
 document.getElementById('computedDuration').textContent = computedDuration;
 
-// Update bars validation with more detailed info
 const maxBars = config.maxBars;
-const maxBarsScreen = config.maxBarsScreen || maxBars;
-const maxBarsData = config.maxBarsData || maxBars;
-const screenWidth = config.screenWidth || 'unknown';
-
 document.getElementById('barsToShow').max = maxBars;
-
-// Create more informative help text
 let helpText = `Max bars: ${maxBars}`;
-if (maxBarsScreen !== maxBarsData) {
-    const limitation = maxBarsScreen < maxBarsData ? 'screen resolution' : 'data buffer';
-    helpText += ` (limited by ${limitation})`;
-}
-helpText += `\nScreen: ${screenWidth}px, Screen limit: ${maxBarsScreen}, Data limit: ${maxBarsData}`;
-
 document.getElementById('barsHelpText').textContent = helpText;
 
-// Show warning if data buffer is the limiting factor
-if (maxBarsData < maxBarsScreen) {
-    document.getElementById('barsWarning').style.display = 'block';
-}
-
 document.getElementById('useTestData').checked = config.useTestData || false;
-// Remove intraday checkbox since it's always enabled
 document.getElementById('enforceHours').checked = config.enforceHours !== false;
+
+// Show/hide test data options
+const testOptions = document.getElementById('testDataOptions');
+testOptions.style.display = document.getElementById('useTestData').checked ? 'block' : 'none';
 
 document.getElementById('useStaticIP').checked = config.useStaticIP || false;
 document.getElementById('staticIP').value = config.staticIP || '192.168.4.184';
@@ -323,67 +325,35 @@ document.getElementById('subnetMask').value = config.subnetMask || '255.255.255.
 const staticFields = document.getElementById('staticIPFields');
 staticFields.style.display = document.getElementById('useStaticIP').checked ? 'block' : 'none';
 
+updateIntervalHelp();
+
 }catch(e){console.log('Load config error:',e)}
 }
-
-// Add interval change handler to update computed duration display
-document.getElementById('yahooInterval').addEventListener('change', function() {
-    // Update the displayed duration when interval changes
-    const intervalToDuration = {
-        '1m': 60,
-        '2m': 120,
-        '5m': 300,
-        '15m': 900,
-        '30m': 1800,
-        '60m': 3600,
-        '1h': 3600,
-        '90m': 5400,
-        '1d': 86400,
-        '5d': 432000,
-        '1wk': 604800,
-        '1mo': 2592000,
-        '3mo': 7776000
-    };
-    
-    const duration = intervalToDuration[this.value] || 300; // Default to 5 minutes
-    document.getElementById('computedDuration').textContent = duration;
-});
 
 document.getElementById('configForm').addEventListener('submit', async function(e){
 e.preventDefault();
 
-// Get and validate symbol
-let symbol = document.getElementById('symbol').value.trim().toUpperCase();
-if (!symbol) {
-    showStatus('Please enter a stock symbol', 'error');
-    return;
-}
-if (symbol.length > 6) {
-    symbol = symbol.substring(0, 6);
-}
-// Basic validation: must contain at least one letter
-if (!/[A-Z]/.test(symbol)) {
-    showStatus('Symbol must contain at least one letter', 'error');
-    return;
+// Convert update interval to milliseconds
+let updateInterval = parseInt(document.getElementById('updateInterval').value);
+const unit = document.getElementById('updateUnit').value;
+if (unit === 'sec') {
+    updateInterval = updateInterval * 1000; // Convert to milliseconds
 }
 
-// Validate bars to show
-const barsToShow = parseInt(document.getElementById('barsToShow').value);
-const maxBars = parseInt(document.getElementById('barsToShow').max);
-if (barsToShow > maxBars) {
-    showStatus(`Bars to show cannot exceed ${maxBars} (limited by device constraints)`, 'error');
+// Validate minimum intervals
+const isTestMode = document.getElementById('useTestData').checked;
+if (!isTestMode && updateInterval < 1000) {
+    showStatus('Real data mode requires minimum 1 second update interval', 'error');
     return;
 }
 
 const config = {
-symbol: symbol,
+symbol: document.getElementById('symbol').value.trim().toUpperCase(),
 yahooInterval: document.getElementById('yahooInterval').value,
 yahooRange: document.getElementById('yahooRange').value,
-updateInterval: parseInt(document.getElementById('updateInterval').value),
-// Remove: candleDuration: parseInt(document.getElementById('candleDuration').value),
-barsToShow: barsToShow,
+updateInterval: updateInterval, // Now in milliseconds
+barsToShow: parseInt(document.getElementById('barsToShow').value),
 useTestData: document.getElementById('useTestData').checked,
-// Remove: useIntraday: document.getElementById('useIntraday').checked,
 enforceHours: document.getElementById('enforceHours').checked,
 useStaticIP: document.getElementById('useStaticIP').checked,
 staticIP: document.getElementById('staticIP').value,
@@ -399,11 +369,7 @@ body: JSON.stringify(config)
 });
 const result = await response.json();
 if(response.ok) {
-    let message = 'Updated successfully! Candle duration auto-synced with interval.';
-    if (config.useStaticIP) {
-        message += ' Device restart required for network changes.';
-    }
-    // Reload config to get updated computed duration
+    let message = `Updated successfully! Update interval: ${updateInterval}${unit === 'ms' ? 'ms' : 's'}`;
     setTimeout(loadConfig, 1000);
     showStatus(message, 'success');
 } else {

@@ -6,7 +6,7 @@
 // Default configuration values
 bool USE_TEST_DATA = false;
 bool USE_INTRADAY_DATA = true;
-int INTRADAY_UPDATE_INTERVAL = 1;
+int INTRADAY_UPDATE_INTERVAL = 1000; // Default 1 second in milliseconds
 int CANDLE_COLLECTION_DURATION = 180;
 String STOCK_SYMBOL = "SPY";
 bool ENFORCE_MARKET_HOURS = true;
@@ -42,7 +42,7 @@ void loadConfig() {
     
     USE_TEST_DATA = preferences.getBool("useTestData", false);
     USE_INTRADAY_DATA = true; // Always enable for real-time updates
-    INTRADAY_UPDATE_INTERVAL = preferences.getInt("updateInterval", 1);
+    INTRADAY_UPDATE_INTERVAL = preferences.getInt("updateInterval", 1000); 
     CANDLE_COLLECTION_DURATION = preferences.getInt("candleDuration", 180);
     STOCK_SYMBOL = preferences.getString("symbol", "SPY");
     ENFORCE_MARKET_HOURS = preferences.getBool("enforceHours", true);

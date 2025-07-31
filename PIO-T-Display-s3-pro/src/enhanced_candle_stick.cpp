@@ -319,15 +319,10 @@ void EnhancedCandleStick::draw_candlestick(lv_obj_t *parent, int index, const en
     y_open = constrain(y_open, 0, chart_height);
     y_close = constrain(y_close, 0, chart_height);
     
-    // Color coding: green for up, red for down, orange for incomplete
-    lv_color_t candle_color;
-    if (!candle.is_complete) {
-        candle_color = lv_color_make(255, 165, 0); // Orange for incomplete candles
-    } else {
-        candle_color = (candle.close >= candle.open) ? 
-            lv_color_make(0, 255, 0) :  // Green
-            lv_color_make(255, 0, 0);   // Red
-    }
+    // SIMPLIFIED Color coding: ONLY green for up, red for down - NO ORANGE
+    lv_color_t candle_color = (candle.close >= candle.open) ? 
+        lv_color_make(0, 255, 0) :  // Green for up
+        lv_color_make(255, 0, 0);   // Red for down
     
     // Draw wick (always 1 pixel wide, centered)
     lv_obj_t *wick = lv_obj_create(parent);
