@@ -335,39 +335,81 @@ bool DataFetcher::updateData() {
 }
 
 void DataFetcher::buildIntradayCandle(float price, time_t timestamp) {
+  static int update_count = 0;
+  static int last_candle_count = 0; // Track if data was reset
+
+  // Reset update counter if data was cleared
+  if (num_candles < last_candle_count || num_candles == 0) {
+    update_count = 0;
+    Serial.println("Test data: Update counter reset due to data clear");
+  }
+  last_candle_count = num_candles;
+
+  if (USE_TEST_DATA) {
+    // TEST DATA MODE: Use update counting
+    update_count++;
+
+    if (num_candles == 0) {
+      // Create the first candle
+      enhanced_candle_t newCandle;
+      newCandle.timestamp = timestamp;
+      newCandle.open = price;
+      newCandle.high = price;
+      newCandle.low = price;
+      newCandle.close = price;
+      newCandle.is_complete = false; // Incomplete until we reach update limit
+
+      updateCircularBuffer(newCandle);
+      Serial.println("Test data: Created first candle - Update 1/" +
+                     String(TEST_DATA_UPDATES_PER_BAR));
+    } else {
+      // Update the current candle
+      candles[newest_candle_index].close = price;
+      candles[newest_candle_index].high =
+          std::max(candles[newest_candle_index].high, price);
+      candles[newest_candle_index].low =
+          std::min(candles[newest_candle_index].low, price);
+      candles[newest_candle_index].timestamp = timestamp;
+
+      // Check if we should complete this candle
+      if (update_count >= TEST_DATA_UPDATES_PER_BAR) {
+        candles[newest_candle_index].is_complete = true;
+        Serial.println("Test data: Completed candle after " +
+                       String(update_count) + " updates");
+        update_count = 0; // Reset for next candle
+      } else {
+        Serial.println("Test data: Update " + String(update_count) + "/" +
+                       String(TEST_DATA_UPDATES_PER_BAR) +
+                       " - Price: " + String(price));
+      }
+    }
+
+    current_price = price;
+    return;
+  }
+
+  // REAL DATA MODE: Use existing time-based logic
   int interval_seconds = getIntervalSeconds(YAHOO_INTERVAL);
 
-  // Check if we should create a new candle or update the existing one
   if (num_candles == 0 ||
       shouldCreateNewCandle(timestamp, candles[newest_candle_index].timestamp,
                             interval_seconds)) {
-    // Create new candle
     enhanced_candle_t newCandle;
     newCandle.timestamp = timestamp;
     newCandle.open = price;
     newCandle.high = price;
     newCandle.low = price;
     newCandle.close = price;
-    newCandle.is_complete = true; // ALWAYS mark as complete - no orange bars
+    newCandle.is_complete = true;
 
     updateCircularBuffer(newCandle);
-
-    if (USE_TEST_DATA) {
-      Serial.println("Test data: Created new candle at price " + String(price));
-    }
   } else {
-    // Update existing candle
     candles[newest_candle_index].close = price;
     candles[newest_candle_index].high =
         std::max(candles[newest_candle_index].high, price);
     candles[newest_candle_index].low =
         std::min(candles[newest_candle_index].low, price);
-    candles[newest_candle_index].is_complete = true; // ALWAYS mark as complete
-
-    if (USE_TEST_DATA) {
-      Serial.println("Test data: Updated existing candle, close price: " +
-                     String(price));
-    }
+    candles[newest_candle_index].is_complete = true;
   }
 
   current_price = price;
@@ -532,7 +574,9 @@ float DataFetcher::getRandomPrice() {
 }
 
 void DataFetcher::initializeTestData() {
-  Serial.println("Initializing test data...");
+  Serial.println("Initializing realistic test data...");
+  Serial.println("Using " + String(TEST_DATA_UPDATES_PER_BAR) +
+                 " updates per candle for realistic OHLC generation");
 
   float base_price = 250.0;
   time_t now;
@@ -544,57 +588,155 @@ void DataFetcher::initializeTestData() {
 
   // Pre-populate with historical test data
   int test_candles =
-      std::min(MAX_CANDLES - 5, 100); // Generate up to 100 test candles
+      std::min(MAX_CANDLES - 5, 500); // Generate up to 500 test candles
 
   for (int i = 0; i < test_candles; i++) {
     enhanced_candle_t candle;
 
-    // Generate realistic price movements
-    float price_change = (random(-200, 201) / 100.0) * 2; // -4 to +4 change
-    float open = base_price + price_change;
+    // Initialize the candle with starting price
+    float starting_price = base_price;
+    candle.open = starting_price;
+    candle.high = starting_price;
+    candle.low = starting_price;
+    candle.close = starting_price;
 
-    // Generate intraday movement
-    float intraday_range = (random(50, 200) / 100.0); // 0.5 to 2.0 range
-    float close_change = (random(-100, 101) / 100.0) * intraday_range;
-    float close = open + close_change;
+    // Simulate TEST_DATA_UPDATES_PER_BAR price updates to build this candle
+    float current_price = starting_price;
 
-    // Ensure prices don't go negative
-    open = std::max(1.0f, open);
-    close = std::max(1.0f, close);
+    // Serial.printf("Generating candle %d starting at %.2f with %d updates:\n",
+    //              i, starting_price, TEST_DATA_UPDATES_PER_BAR);
 
-    // Calculate high and low
-    candle.high =
-        std::max(open, close) + (random(0, 100) / 100.0) * intraday_range;
-    candle.low =
-        std::min(open, close) - (random(0, 100) / 100.0) * intraday_range;
-    candle.open = open;
-    candle.close = close;
+    for (int update = 0; update < TEST_DATA_UPDATES_PER_BAR; update++) {
+      // Generate realistic price movement for each update
+      // Use smaller movements for individual updates (0.1% to 0.5% per update)
+      float change_percent = (random(-50, 51) / 10000.0); // -0.5% to +0.5%
+      float price_change = current_price * change_percent;
+      current_price += price_change;
 
-    // Ensure low doesn't go negative
-    candle.low = std::max(0.1f, candle.low);
+      // Ensure price doesn't go negative
+      current_price = std::max(0.01f, current_price);
+
+      // Update the candle's OHLC based on this price movement
+      candle.high = std::max(candle.high, current_price);
+      candle.low = std::min(candle.low, current_price);
+      candle.close = current_price; // Close is always the last price
+
+      // Debug output for first few updates of first few candles
+      // if (i < 3 && update < 5) {
+      //     Serial.printf("  Update %d: %.2f (change: %+.3f)\n",
+      //                  update + 1, current_price, price_change);
+      // } else if (i < 3 && update == TEST_DATA_UPDATES_PER_BAR - 1) {
+      //     Serial.printf("  Update %d (final): %.2f\n", update + 1,
+      //     current_price);
+      // }
+    }
+
+    // Ensure low is never higher than open/close and high is never lower
+    candle.low = std::min({candle.low, candle.open, candle.close});
+    candle.high = std::max({candle.high, candle.open, candle.close});
 
     // Set timestamp going backwards in time
     candle.timestamp = now - (test_candles - i) * CANDLE_COLLECTION_DURATION;
-    candle.is_complete = true; // FIXED: Mark all test data as complete
+    candle.is_complete = true; // Mark all historical test data as complete
 
     updateCircularBuffer(candle);
-    base_price = close; // Use close as next base price for continuity
+
+    // Use the close price as the base for the next candle (price continuity)
+    base_price = candle.close;
+
+    // Summary for first few candles
+    if (i < 5) {
+      float price_move = candle.close - candle.open;
+      float price_range = candle.high - candle.low;
+      Serial.printf("Candle %d complete: O:%.2f H:%.2f L:%.2f C:%.2f (Move: "
+                    "%+.2f, Range: %.2f)\n",
+                    i, candle.open, candle.high, candle.low, candle.close,
+                    price_move, price_range);
+    }
   }
 
   current_price = candles[newest_candle_index].close;
   initial_data_loaded = true;
 
-  Serial.println("Test data initialized with " + String(num_candles) +
-                 " candles");
-  Serial.println("Final price for continuation: " + String(current_price));
+  Serial.println("\n=== Test Data Generation Complete ===");
+  Serial.println("Generated " + String(num_candles) + " realistic candles");
+  Serial.println("Each candle built from " + String(TEST_DATA_UPDATES_PER_BAR) +
+                 " price updates");
+  Serial.println("Final price for live continuation: " + String(current_price));
 
-  // Print some sample data for verification
-  for (int i = 0; i < std::min(3, num_candles); i++) {
+  // Calculate and display statistics
+  float total_range = 0;
+  float total_movement = 0;
+  int up_candles = 0, down_candles = 0;
+
+  for (int i = 0; i < std::min(num_candles, 50); i++) { // Check last 50 candles
     int idx = (newest_candle_index - i + MAX_CANDLES) % MAX_CANDLES;
-    Serial.printf("Test candle %d: O:%.2f H:%.2f L:%.2f C:%.2f Complete:%d\n",
-                  i, candles[idx].open, candles[idx].high, candles[idx].low,
-                  candles[idx].close, candles[idx].is_complete);
+    const enhanced_candle_t &c = candles[idx];
+
+    total_range += (c.high - c.low);
+    float movement = c.close - c.open;
+    total_movement += abs(movement);
+
+    if (movement > 0)
+      up_candles++;
+    else if (movement < 0)
+      down_candles++;
   }
+
+  int sample_size = std::min(num_candles, 50);
+  Serial.println("Statistics for last " + String(sample_size) + " candles:");
+  Serial.printf("  Average range: %.2f\n", total_range / sample_size);
+  Serial.printf("  Average movement: %.2f\n", total_movement / sample_size);
+  Serial.printf("  Up candles: %d, Down candles: %d, Doji: %d\n", up_candles,
+                down_candles, sample_size - up_candles - down_candles);
+
+  // Print some sample candles for verification - FIXED: Use ASCII characters
+  Serial.println("\nSample candles (most recent):");
+  for (int i = 0; i < std::min(5, num_candles); i++) {
+    int idx = (newest_candle_index - i + MAX_CANDLES) % MAX_CANDLES;
+    const enhanced_candle_t &c = candles[idx];
+    float move = c.close - c.open;
+    float range = c.high - c.low;
+
+    // FIXED: Use simple ASCII characters instead of Unicode
+    char direction = (move > 0) ? '^' : (move < 0) ? 'v' : '-';
+
+    // Serial.printf("  Candle -%d: O:%.2f H:%.2f L:%.2f C:%.2f %c (Move:%+.2f
+    // Range:%.2f)\n",
+    //              i, c.open, c.high, c.low, c.close, direction, move, range);
+  }
+
+  Serial.println("Ready for live test data updates...\n");
+}
+
+// Also add the validation function without Unicode characters:
+bool DataFetcher::validateCandle(const enhanced_candle_t &candle) {
+  // Ensure OHLC relationships are valid
+  if (candle.high < candle.open || candle.high < candle.close ||
+      candle.high < candle.low) {
+    Serial.printf("ERROR: Invalid high %.2f vs O:%.2f H:%.2f L:%.2f C:%.2f\n",
+                  candle.high, candle.open, candle.high, candle.low,
+                  candle.close);
+    return false;
+  }
+
+  if (candle.low > candle.open || candle.low > candle.close ||
+      candle.low > candle.high) {
+    Serial.printf("ERROR: Invalid low %.2f vs O:%.2f H:%.2f L:%.2f C:%.2f\n",
+                  candle.low, candle.open, candle.high, candle.low,
+                  candle.close);
+    return false;
+  }
+
+  if (candle.open <= 0 || candle.close <= 0 || candle.high <= 0 ||
+      candle.low <= 0) {
+    Serial.printf(
+        "ERROR: Negative/zero prices in candle O:%.2f H:%.2f L:%.2f C:%.2f\n",
+        candle.open, candle.high, candle.low, candle.close);
+    return false;
+  }
+
+  return true;
 }
 
 void DataFetcher::reset() {

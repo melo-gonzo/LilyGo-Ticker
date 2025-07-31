@@ -7,72 +7,72 @@ WebServer StockWebServer::server(80);
 bool StockWebServer::serverStarted = false;
 
 bool StockWebServer::begin(int port) {
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WiFi not connected, cannot start web server");
-        return false;
-    }
-    
-    // Set up routes
-    server.on("/", HTTP_GET, handleRoot);
-    server.on("/config", HTTP_GET, handleGetConfig);
-    server.on("/config", HTTP_POST, handleSetConfig);
-    server.onNotFound(handleNotFound);
-    
-    // Enable CORS
-    server.enableCORS(true);
-    
-    server.begin();
-    serverStarted = true;
-    
-    Serial.println("Web server started on http://" + WiFi.localIP().toString());
-    return true;
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected, cannot start web server");
+    return false;
+  }
+
+  // Set up routes
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/config", HTTP_GET, handleGetConfig);
+  server.on("/config", HTTP_POST, handleSetConfig);
+  server.onNotFound(handleNotFound);
+
+  // Enable CORS
+  server.enableCORS(true);
+
+  server.begin();
+  serverStarted = true;
+
+  Serial.println("Web server started on http://" + WiFi.localIP().toString());
+  return true;
 }
 
 void StockWebServer::handleClient() {
-    if (serverStarted) {
-        server.handleClient();
-    }
+  if (serverStarted) {
+    server.handleClient();
+  }
 }
 
 void StockWebServer::stop() {
-    if (serverStarted) {
-        server.stop();
-        serverStarted = false;
-        Serial.println("Web server stopped");
-    }
+  if (serverStarted) {
+    server.stop();
+    serverStarted = false;
+    Serial.println("Web server stopped");
+  }
 }
 
 void StockWebServer::handleRoot() {
-    server.send(200, "text/html", generateHTML());
+  server.send(200, "text/html", generateHTML());
 }
 
 void StockWebServer::handleGetConfig() {
-    String config = getConfigJSON();
-    server.send(200, "application/json", config);
+  String config = getConfigJSON();
+  server.send(200, "application/json", config);
 }
 
 void StockWebServer::handleSetConfig() {
-    if (server.hasArg("plain")) {
-        String body = server.arg("plain");
-        Serial.println("Received config: " + body);
-        
-        if (setConfigFromJSON(body)) {
-            server.send(200, "application/json", "{\"status\":\"success\"}");
-            Serial.println("Configuration updated successfully");
-        } else {
-            server.send(400, "application/json", "{\"status\":\"error\"}");
-        }
+  if (server.hasArg("plain")) {
+    String body = server.arg("plain");
+    Serial.println("Received config: " + body);
+
+    if (setConfigFromJSON(body)) {
+      server.send(200, "application/json", "{\"status\":\"success\"}");
+      Serial.println("Configuration updated successfully");
     } else {
-        server.send(400, "application/json", "{\"status\":\"error\"}");
+      server.send(400, "application/json", "{\"status\":\"error\"}");
     }
+  } else {
+    server.send(400, "application/json", "{\"status\":\"error\"}");
+  }
 }
 
 void StockWebServer::handleNotFound() {
-    server.send(404, "text/plain", "Not found");
+  server.send(404, "text/plain", "Not found");
 }
 
 String StockWebServer::generateHTML() {
-    return R"RAW(<!DOCTYPE html>
+  return R"RAW(<!DOCTYPE html>
 <html>
 <head>
 <title>Stock Tracker Config</title>
@@ -102,6 +102,24 @@ button:hover{background:#0056b3}
 .symbol-button:hover{background:#e9ecef}
 .test-data-options{background:#fff3cd;padding:10px;border-radius:4px;margin-top:10px;border:1px solid #ffeaa7}
 .fast-update-note{background:#e8f5e8;padding:8px;border-radius:4px;font-size:12px;color:#2e7d2e;margin-top:5px}
+.form-group input[type="number"]:invalid,
+.form-group input[type="number"].invalid {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
+}
+.form-group input[type="number"]:valid,
+.form-group input[type="number"].valid {
+    border-color: #28a745 !important;
+}
+.bars-limitation-info {
+    background: #e3f2fd;
+    border: 1px solid #90caf9;
+    border-radius: 4px;
+    padding: 10px;
+    margin-top: 10px;
+    font-size: 12px;
+    color: #1565c0;
+}
 </style>
 </head>
 <body>
@@ -179,8 +197,20 @@ Max bars depends on screen resolution and data buffer
 </div>
 <div id="testDataOptions" class="test-data-options" style="display:none;">
 <strong>Test Data Mode:</strong> You can use very fast update intervals (like 100ms) to see rapid price changes for testing and demos.
+
+<div class="form-group" style="margin-top:15px;">
+<label>Updates per Bar:</label>
+<input type="number" id="testUpdatesPerBar" min="1" max="1000" value="10" style="width:100px;">
+<div style="font-size:12px;color:#666;margin-top:5px;">
+Number of price updates needed to complete one candlestick bar. Higher values = longer bars with more price action.
+</div>
+</div>
+
 <div class="fast-update-note">
-<strong>💡 Tip:</strong> Try 100-500ms intervals for fast test data simulation!
+<strong>💡 Examples:</strong><br>
+• 100ms interval + 10 updates = New bar every 1 second<br>
+• 50ms interval + 20 updates = New bar every 1 second<br>
+• 10ms interval + 100 updates = New bar every 1 second
 </div>
 </div>
 </div>
@@ -263,6 +293,24 @@ function updateIntervalHelp() {
 
 document.getElementById('updateUnit').addEventListener('change', updateIntervalHelp);
 
+// Add input validation for bars field
+document.getElementById('barsToShow').addEventListener('input', function(e) {
+    const value = parseInt(e.target.value);
+    const max = parseInt(e.target.max);
+    const min = parseInt(e.target.min) || 1;
+    
+    if (value > max) {
+        e.target.style.borderColor = '#dc3545';
+        e.target.title = `Maximum allowed: ${max}`;
+    } else if (value < min) {
+        e.target.style.borderColor = '#dc3545';
+        e.target.title = `Minimum allowed: ${min}`;
+    } else {
+        e.target.style.borderColor = '#28a745';
+        e.target.title = '';
+    }
+});
+
 // Auto-capitalize and limit symbol input
 document.getElementById('symbol').addEventListener('input', function(e) {
     let value = e.target.value.toUpperCase();
@@ -301,6 +349,7 @@ if (updateMs < 1000) {
 }
 
 document.getElementById('barsToShow').value = config.barsToShow || 50;
+document.getElementById('testUpdatesPerBar').value = config.testUpdatesPerBar || 10;
 
 const computedDuration = config.computedCandleDuration || 120;
 document.getElementById('computedDuration').textContent = computedDuration;
@@ -330,8 +379,46 @@ updateIntervalHelp();
 }catch(e){console.log('Load config error:',e)}
 }
 
+// Add interval change handler to update computed duration display
+document.getElementById('yahooInterval').addEventListener('change', function() {
+    // Update the displayed duration when interval changes
+    const intervalToDuration = {
+        '1m': 60,
+        '2m': 120,
+        '5m': 300,
+        '15m': 900,
+        '30m': 1800,
+        '60m': 3600,
+        '1h': 3600,
+        '90m': 5400,
+        '1d': 86400,
+        '5d': 432000,
+        '1wk': 604800,
+        '1mo': 2592000,
+        '3mo': 7776000
+    };
+    
+    const duration = intervalToDuration[this.value] || 300; // Default to 5 minutes
+    document.getElementById('computedDuration').textContent = duration;
+});
+
 document.getElementById('configForm').addEventListener('submit', async function(e){
 e.preventDefault();
+
+// Get and validate symbol
+let symbol = document.getElementById('symbol').value.trim().toUpperCase();
+if (!symbol) {
+    showStatus('Please enter a stock symbol', 'error');
+    return;
+}
+if (symbol.length > 8) {
+    symbol = symbol.substring(0, 8);
+}
+// Basic validation: must contain at least one letter
+if (!/[A-Z]/.test(symbol)) {
+    showStatus('Symbol must contain at least one letter', 'error');
+    return;
+}
 
 // Convert update interval to milliseconds
 let updateInterval = parseInt(document.getElementById('updateInterval').value);
@@ -347,13 +434,29 @@ if (!isTestMode && updateInterval < 1000) {
     return;
 }
 
+// Validate bars to show
+const barsToShow = parseInt(document.getElementById('barsToShow').value);
+const maxBars = parseInt(document.getElementById('barsToShow').max);
+if (barsToShow > maxBars) {
+    showStatus(`Bars to show cannot exceed ${maxBars} (limited by device constraints)`, 'error');
+    return;
+}
+
+// Validate updates per bar
+const updatesPerBar = parseInt(document.getElementById('testUpdatesPerBar').value);
+if (isTestMode && (updatesPerBar < 1 || updatesPerBar > 1000)) {
+    showStatus('Updates per bar must be between 1 and 1000', 'error');
+    return;
+}
+
 const config = {
-symbol: document.getElementById('symbol').value.trim().toUpperCase(),
+symbol: symbol,
 yahooInterval: document.getElementById('yahooInterval').value,
 yahooRange: document.getElementById('yahooRange').value,
 updateInterval: updateInterval, // Now in milliseconds
-barsToShow: parseInt(document.getElementById('barsToShow').value),
+barsToShow: barsToShow,
 useTestData: document.getElementById('useTestData').checked,
+testUpdatesPerBar: updatesPerBar,
 enforceHours: document.getElementById('enforceHours').checked,
 useStaticIP: document.getElementById('useStaticIP').checked,
 staticIP: document.getElementById('staticIP').value,
@@ -370,6 +473,13 @@ body: JSON.stringify(config)
 const result = await response.json();
 if(response.ok) {
     let message = `Updated successfully! Update interval: ${updateInterval}${unit === 'ms' ? 'ms' : 's'}`;
+    if (isTestMode) {
+        message += `, ${updatesPerBar} updates per bar`;
+    }
+    if (config.useStaticIP) {
+        message += ' Device restart required for network changes.';
+    }
+    // Reload config to get updated computed duration
     setTimeout(loadConfig, 1000);
     showStatus(message, 'success');
 } else {
