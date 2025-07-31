@@ -222,16 +222,48 @@ bool DataFetcher::updateData() {
     time_t now;
     time(&now);
     float price = getRandomPrice();
+
+    // Track candle state before update
+    int candles_before = num_candles;
+    bool was_complete =
+        (num_candles > 0) ? candles[newest_candle_index].is_complete : false;
+
     buildIntradayCandle(price, now);
 
-    // DEBUG: Print occasionally to verify timing
+    // Track candle state after update
+    int candles_after = num_candles;
+    bool is_complete =
+        (num_candles > 0) ? candles[newest_candle_index].is_complete : false;
+
+    // Enhanced debug output every few seconds
     static unsigned long lastTestDebug = 0;
-    if (millis() - lastTestDebug > 5000) { // Every 5 seconds
-      Serial.println(
-          "Test data generated - Price: " + String(price) + ", Interval: " +
-          String(INTRADAY_UPDATE_INTERVAL) + "ms" + ", Actual gap: " +
-          String(millis() - (last_update_millis - INTRADAY_UPDATE_INTERVAL)) +
-          "ms");
+    if (millis() - lastTestDebug > 3000) { // Every 3 seconds instead of 5
+      Serial.println("\n=== TEST DATA STATUS ===");
+      Serial.println("Update interval: " + String(INTRADAY_UPDATE_INTERVAL) +
+                     "ms");
+      Serial.println("Updates per bar: " + String(TEST_DATA_UPDATES_PER_BAR));
+      Serial.println("Current price: " + String(price));
+      Serial.println("Total candles: " + String(num_candles));
+
+      if (num_candles > 0) {
+        Serial.println("Current candle status: " +
+                       String(is_complete ? "COMPLETE" : "BUILDING"));
+        Serial.println("Current candle OHLC: O:" +
+                       String(candles[newest_candle_index].open) +
+                       " H:" + String(candles[newest_candle_index].high) +
+                       " L:" + String(candles[newest_candle_index].low) +
+                       " C:" + String(candles[newest_candle_index].close));
+      }
+
+      // Show when candles complete or new ones start
+      if (candles_after > candles_before) {
+        Serial.println(">>> NEW CANDLE CREATED <<<");
+      }
+      if (!was_complete && is_complete) {
+        Serial.println(">>> CANDLE COMPLETED <<<");
+      }
+
+      Serial.println("========================\n");
       lastTestDebug = millis();
     }
 
@@ -350,7 +382,7 @@ void DataFetcher::buildIntradayCandle(float price, time_t timestamp) {
     update_count++;
 
     if (num_candles == 0) {
-      // Create the first candle
+      // Create the very first candle
       enhanced_candle_t newCandle;
       newCandle.timestamp = timestamp;
       newCandle.open = price;
@@ -363,24 +395,49 @@ void DataFetcher::buildIntradayCandle(float price, time_t timestamp) {
       Serial.println("Test data: Created first candle - Update 1/" +
                      String(TEST_DATA_UPDATES_PER_BAR));
     } else {
-      // Update the current candle
-      candles[newest_candle_index].close = price;
-      candles[newest_candle_index].high =
-          std::max(candles[newest_candle_index].high, price);
-      candles[newest_candle_index].low =
-          std::min(candles[newest_candle_index].low, price);
-      candles[newest_candle_index].timestamp = timestamp;
+      // Check if current candle is complete and we need a new one
+      if (candles[newest_candle_index].is_complete) {
+        // Previous candle was completed, start a new one
+        enhanced_candle_t newCandle;
+        newCandle.timestamp = timestamp;
+        newCandle.open = price;
+        newCandle.high = price;
+        newCandle.low = price;
+        newCandle.close = price;
+        newCandle.is_complete = false; // Start as incomplete
 
-      // Check if we should complete this candle
-      if (update_count >= TEST_DATA_UPDATES_PER_BAR) {
-        candles[newest_candle_index].is_complete = true;
-        Serial.println("Test data: Completed candle after " +
-                       String(update_count) + " updates");
-        update_count = 0; // Reset for next candle
-      } else {
-        Serial.println("Test data: Update " + String(update_count) + "/" +
+        updateCircularBuffer(newCandle);
+        update_count = 1; // Reset counter for new candle
+        Serial.println("Test data: Started new candle - Update 1/" +
                        String(TEST_DATA_UPDATES_PER_BAR) +
-                       " - Price: " + String(price));
+                       " (Price: " + String(price) + ")");
+      } else {
+        // Update the current incomplete candle
+        candles[newest_candle_index].close = price;
+        candles[newest_candle_index].high =
+            std::max(candles[newest_candle_index].high, price);
+        candles[newest_candle_index].low =
+            std::min(candles[newest_candle_index].low, price);
+        candles[newest_candle_index].timestamp = timestamp;
+
+        // Check if we should complete this candle
+        if (update_count >= TEST_DATA_UPDATES_PER_BAR) {
+          candles[newest_candle_index].is_complete = true;
+          Serial.println(
+              "Test data: Completed candle after " + String(update_count) +
+              " updates" + " (Final price: " + String(price) +
+              ", Open: " + String(candles[newest_candle_index].open) +
+              ", High: " + String(candles[newest_candle_index].high) +
+              ", Low: " + String(candles[newest_candle_index].low) + ")");
+          // Note: Don't reset update_count here - let it reset when new candle
+          // starts
+        } else {
+          Serial.println(
+              "Test data: Update " + String(update_count) + "/" +
+              String(TEST_DATA_UPDATES_PER_BAR) + " - Price: " + String(price) +
+              " (Range: " + String(candles[newest_candle_index].low) + "-" +
+              String(candles[newest_candle_index].high) + ")");
+        }
       }
     }
 
@@ -388,7 +445,7 @@ void DataFetcher::buildIntradayCandle(float price, time_t timestamp) {
     return;
   }
 
-  // REAL DATA MODE: Use existing time-based logic
+  // REAL DATA MODE: Use existing time-based logic (unchanged)
   int interval_seconds = getIntervalSeconds(YAHOO_INTERVAL);
 
   if (num_candles == 0 ||

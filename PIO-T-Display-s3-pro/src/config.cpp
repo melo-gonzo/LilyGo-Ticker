@@ -275,7 +275,18 @@ int calculateMaxBars(int screenWidth, int panelWidth, int candleMinWidth) {
                  String(actual_candle_width));
   Serial.println("================================\n");
 
-  return actualMaxBars;
+  int renderingBuffer = 5; // "minus 5" for reasons due to padding and rounding
+  int bufferedMax = actualMaxBars - renderingBuffer;
+
+  // Ensure we don't go below minimum
+  bufferedMax = std::max(5, bufferedMax);
+
+  Serial.println("Applied rendering buffer:");
+  Serial.println("  theoretical_max: " + String(actualMaxBars));
+  Serial.println("  rendering_buffer: " + String(renderingBuffer));
+  Serial.println("  final_max: " + String(bufferedMax));
+
+  return bufferedMax;
 }
 
 int getScreenWidth() {

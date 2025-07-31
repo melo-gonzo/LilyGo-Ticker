@@ -154,7 +154,7 @@ button:hover{background:#0056b3}
 </div>
 <div class="form-group">
 <label>Range:</label>
-<select id="yahooRange"><option>1d</option><option>5d</option><option>1mo</option><option>3mo</option><option>6mo</option><option>1y</option></select>
+<select id="yahooRange"><option>1d</option><option>5d</option><option>1mo</option><option>3mo</option><option>6mo</option><option>1y</option><option>2y</option><option>5y</option></select>
 </div>
 </div>
 
@@ -207,10 +207,10 @@ Number of price updates needed to complete one candlestick bar. Higher values = 
 </div>
 
 <div class="fast-update-note">
-<strong>💡 Examples:</strong><br>
-• 100ms interval + 10 updates = New bar every 1 second<br>
-• 50ms interval + 20 updates = New bar every 1 second<br>
-• 10ms interval + 100 updates = New bar every 1 second
+<strong>Examples:</strong><br>
+100ms interval + 10 updates = New bar every 1 second<br>
+50ms interval + 20 updates = New bar every 1 second<br>
+10ms interval + 100 updates = New bar every 1 second
 </div>
 </div>
 </div>
