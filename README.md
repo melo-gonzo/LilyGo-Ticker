@@ -15,17 +15,48 @@ If you need a sweet case, check out [this one](https://www.printables.com/model/
    git clone https://github.com/melo-gonzo/LilyGo-Ticker.git
    ```
 
-2. **Setup credentials**
-   - Copy `src/credentials_template.h` to `src/credentials.h`
-   - Add your WiFi SSID and password
-
-3. **Flash and configure**
+2. **Flash and configure**
    - Build/upload using PlatformIO
-   - Connect to the web interface at the device's IP address
-   - Configure stock symbol, interval, and display settings
+   - On first boot the device raises a WiFi access point (`LilyGoTicker`,
+     password `ticker1234`). Join it, open <http://192.168.8.1/wifi>, and pick
+     your network — credentials are saved to NVS.
+   - After that it is reachable on your LAN at its IP or at
+     <http://lilygoticker.local>
+
+   A `src/credentials.h` (copied from `src/credentials_template.h`) is still
+   honoured as a first-boot seed if you prefer to bake credentials in, but it
+   is no longer required.
+
+3. **Set the timezone** — `TIME_ZONE` in `src/config.h` defaults to US
+   Mountain, and the session hours in `src/market_hours.h` are expressed in
+   that same zone. Both need to change together if you move zones.
+
+### Over-the-air updates
+The board's 16MB partition table already carries dual app slots, so after one
+USB flash of this firmware every subsequent update is wireless:
+
+```
+pio run -e T-Display-AMOLED-ota -t upload
+```
+
+The OTA password is `AP_PASS` from `src/config.h`; the `-ota` env's `--auth`
+flag must match. `/status` reports a `fw` build stamp so you can confirm an
+update actually landed.
+
+> Some ESP32-S3 boards refuse the esptool stub over USB-JTAG
+> (`Unable to verify flash chip connection`). If the initial USB flash fails
+> that way, re-run esptool with `--no-stub`.
 
 ### Web Configuration
-The device creates a web interface for easy configuration:
+The device serves three pages, on the LAN or on the fallback AP:
+
+| Path | Purpose |
+|---|---|
+| `/` | ticker configuration |
+| `/wifi` | scan, join and forget networks |
+| `/status` | JSON health: firmware stamp, clock, market state, link, heap, fetch failures |
+
+Configurable on `/`:
 - **Stock Symbol**: Enter any ticker (AAPL, NVDA, BTC-USD, etc.)
 - **Interval**: 1m, 2m, 5m, 15m, 30m, 1h, 1d intervals
 - **Bars to Show**: Configurable based on screen resolution
@@ -36,6 +67,15 @@ Key features:
 - Real-time price updates always enabled
 - Y-axis scaling based on visible data only
 - Market hours enforcement (optional)
+
+### Data path
+Chart requests are windowed (`period1`/`period2`) and sized so a response can
+never hold more bars than the ring buffer, then streamed straight into a
+filtered JSON parse — peak RAM tracks the bar count, not the payload size.
+Live updates re-fetch only the trailing few intervals and merge them by
+timestamp, so candles carry Yahoo's real OHLC rather than an approximation
+built from sampled last-prices, and a brief network outage heals itself on the
+next cycle.
 
 ### Display Features
 - **Candlestick Charts**: Green/red candles with proper OHLC visualization

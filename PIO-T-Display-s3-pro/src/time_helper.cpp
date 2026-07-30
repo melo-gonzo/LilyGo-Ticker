@@ -1,10 +1,10 @@
 #include "time_helper.h"
 #include "config.h"
+#include "market_hours.h"
 #include "ui.h"
+#include "wifi_portal.h"
 #include <Arduino.h>
 #include <time.h>
-
-static bool ntpSyncCompleted = false;
 
 #define INFO_PANEL_ID 0x1001
 #define SYMBOL_LABEL_ID 0x1002
@@ -14,38 +14,19 @@ static bool ntpSyncCompleted = false;
 #define TIME_LABEL_ID 0x1006
 #define DATE_LABEL_ID 0x1007
 
+// The WiFi portal kicks off NTP (and re-applies TZ) on every station-up
+// event; this just re-arms it on demand. It does not block: a boot that
+// happens to race NTP no longer burns ten seconds in setup(), the main loop
+// simply waits for isTimeSynchronized() before it fetches.
 void initiateNTPTimeSync() {
-    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    setenv("TZ", TIME_ZONE, 1);
-    tzset();
-    
-    // Wait for time to be set
-    time_t now = time(nullptr);
-    int retries = 0;
-    while (now < 8 * 3600 * 2 && retries < 20) { // Increased retries for more reliability
-        delay(500);
-        Serial.println("Waiting for NTP time sync...");
-        now = time(nullptr);
-        retries++;
-    }
-    
-    if (now > 8 * 3600 * 2) {
-        ntpSyncCompleted = true;
-        Serial.println("NTP time sync completed successfully");
-        
-        // Print current time to verify
-        struct tm timeinfo;
-        localtime_r(&now, &timeinfo);
-        char timeStr[30];
-        strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S %Z", &timeinfo);
-        Serial.printf("Current time: %s\n", timeStr);
-    } else {
-        Serial.println("NTP time sync failed after retries");
-    }
+    wifiPortalSyncTime();
+    Serial.println("NTP sync requested (" TIME_ZONE ")");
 }
 
+// Derived from the clock itself rather than a latched flag, so a resync
+// after a long outage is reflected immediately.
 bool isTimeSynchronized() {
-    return ntpSyncCompleted;
+    return StockTracker::MarketHoursChecker::clockIsSynced();
 }
 
 // Find an object with specific ID in a container - same as in CandleStick.cpp
@@ -68,8 +49,8 @@ static lv_obj_t* find_obj_by_id(lv_obj_t *parent, uint32_t id) {
 }
 
 void updateTimeAndDate() {
-    if (!ntpSyncCompleted) {
-        // Try to sync if not already synchronized
+    if (!isTimeSynchronized()) {
+        // Re-arm the sync periodically until the clock comes up.
         static unsigned long lastSyncAttempt = 0;
         if (millis() - lastSyncAttempt > 60000) { // Try every minute
             initiateNTPTimeSync();
@@ -81,27 +62,20 @@ void updateTimeAndDate() {
     // Only update time strings every second
     static unsigned long lastTimeStringUpdate = 0;
     static char timeStr[9] = "00:00:00";
-    static char dateStr[9] = "00-00-00";  // Changed to MM-DD-YY format
-    
+    static char dateStr[9] = "00-00-00";  // MM-DD-YY format
+
     // Update the time strings once per second
     if (millis() - lastTimeStringUpdate > 1000) {
         time_t now = time(nullptr);
         struct tm timeinfo;
         localtime_r(&now, &timeinfo);
-        
+
         strftime(timeStr, sizeof(timeStr), "%H:%M:%S", &timeinfo);
-        strftime(dateStr, sizeof(dateStr), "%m-%d-%y", &timeinfo);  // MM-DD-YY format
-        
+        strftime(dateStr, sizeof(dateStr), "%m-%d-%y", &timeinfo);
+
         lastTimeStringUpdate = millis();
-        
-        // Debug output for date format verification (remove after testing)
-        static unsigned long lastDebugOutput = 0;
-        if (millis() - lastDebugOutput > 30000) { // Debug every 30 seconds
-            Serial.printf("Date display format: %s (MM-DD-YY)\n", dateStr);
-            lastDebugOutput = millis();
-        }
     }
-    
+
     // Check if we have an info panel on the chart screen
     lv_obj_t *chart_container = (lv_obj_t *)lv_obj_get_user_data(ui_chart);
     if (chart_container != NULL) {

@@ -1,90 +1,99 @@
 #pragma once
 
-#include <time.h>
+#include "config.h" // For USE_TEST_DATA / ENFORCE_MARKET_HOURS
 #include <string>
-#include "config.h"  // For USE_TEST_DATA
+#include <time.h>
 
 namespace StockTracker {
 
-// Market hours definitions (PST)
-const int MARKET_OPEN_HOUR = 6;    // 6:30 AM PST
+// Regular US equity session expressed in the device timezone (TIME_ZONE,
+// US Mountain): 9:30-16:00 ET is 7:30-14:00 MT. Both zones observe DST on
+// the same dates, so the offset between them never moves.
+//
+// TIME_ZONE carries full POSIX DST rules, so these stay correct across the
+// spring/fall transitions - with a bare "MST7MDT" newlib applies standard
+// time year-round and every one of these comparisons lands an hour off.
+const int MARKET_OPEN_HOUR = 7; // 7:30 AM MT
 const int MARKET_OPEN_MINUTE = 30;
-const int MARKET_CLOSE_HOUR = 13;  // 1:00 PM PST
+const int MARKET_CLOSE_HOUR = 14; // 2:00 PM MT
 const int MARKET_CLOSE_MINUTE = 0;
 
 class MarketHoursChecker {
 public:
-    static bool isMarketOpen() {
-        // If using test data or market hours enforcement is disabled, always return true
-        if (USE_TEST_DATA || !ENFORCE_MARKET_HOURS) {
-            return true;
-        }
+  // Any epoch past this means NTP has actually run (Nov 2023). The old
+  // `now < 8 * 3600 * 2` check passes for any time after Jan 1 1970 08:00
+  // UTC, so a device that never synced looked like it had a valid clock.
+  static bool clockIsSynced() { return time(nullptr) > 1700000000; }
 
-        // Check if we have a valid time before making determinations
-        time_t now;
-        time(&now);
-        if (now < 8 * 3600 * 2) { // Basic check if time is set properly
-            return true; // Default to open if time isn't properly set
-        }
-        
-        struct tm timeinfo;
-        localtime_r(&now, &timeinfo);
+  static bool isMarketOpen() { return withinWindow(0); }
 
-        // Check if it's weekend
-        if (timeinfo.tm_wday == 0 || timeinfo.tm_wday == 6) {
-            return false;
-        }
+  // Like isMarketOpen(), but stays true for graceMinutes past the close so
+  // the final candle of the session - which only completes after the bell -
+  // is still fetched.
+  static bool isCollectionWindow(int graceMinutes) {
+    return withinWindow(graceMinutes);
+  }
 
-        // Convert current time to minutes since midnight
-        int currentMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
-
-        // Convert market hours to minutes since midnight
-        int marketStartMinutes = MARKET_OPEN_HOUR * 60 + MARKET_OPEN_MINUTE;
-        int marketEndMinutes = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE;
-
-        return currentMinutes >= marketStartMinutes && currentMinutes < marketEndMinutes;
+  static std::string getNextMarketOpen() {
+    if (!clockIsSynced()) {
+      return "Time not synced";
     }
 
-    static std::string getNextMarketOpen() {
-        time_t now;
-        time(&now);
-        
-        // Basic check if time is set properly
-        if (now < 8 * 3600 * 2) {
-            return "Time not synced";
-        }
-        
-        struct tm timeinfo;
-        localtime_r(&now, &timeinfo);
+    time_t now;
+    time(&now);
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
 
-        // Set time to next market open
-        timeinfo.tm_hour = MARKET_OPEN_HOUR;
-        timeinfo.tm_min = MARKET_OPEN_MINUTE;
-        timeinfo.tm_sec = 0;
+    int currentMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+    int openMinutes = MARKET_OPEN_HOUR * 60 + MARKET_OPEN_MINUTE;
 
-        // If we're past today's market open time but before market close, 
-        // keep the same day, just show today's opening time
-        if (!isMarketOpen()) {
-            int currentMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
-            int marketEndMinutes = MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE;
-            
-            if (currentMinutes >= marketEndMinutes) {
-                // Already past market close, move to next day
-                timeinfo.tm_mday += 1;
-                mktime(&timeinfo); // Normalize date
-            }
-        }
+    timeinfo.tm_hour = MARKET_OPEN_HOUR;
+    timeinfo.tm_min = MARKET_OPEN_MINUTE;
+    timeinfo.tm_sec = 0;
 
-        // Skip weekends
-        while (timeinfo.tm_wday == 0 || timeinfo.tm_wday == 6) {
-            timeinfo.tm_mday += 1;
-            mktime(&timeinfo);  // Normalize date and get proper day of week
-        }
-
-        char buffer[30];
-        strftime(buffer, sizeof(buffer), "%a %b %d %H:%M %Z", &timeinfo);
-        return std::string(buffer);
+    // Past today's open: the next one is tomorrow.
+    if (currentMinutes >= openMinutes) {
+      timeinfo.tm_mday += 1;
     }
+    mktime(&timeinfo); // normalise, and refresh tm_wday
+
+    while (timeinfo.tm_wday == 0 || timeinfo.tm_wday == 6) {
+      timeinfo.tm_mday += 1;
+      mktime(&timeinfo);
+    }
+
+    char buffer[40];
+    strftime(buffer, sizeof(buffer), "%a %b %d %H:%M %Z", &timeinfo);
+    return std::string(buffer);
+  }
+
+private:
+  static bool withinWindow(int graceMinutes) {
+    if (USE_TEST_DATA || !ENFORCE_MARKET_HOURS) {
+      return true;
+    }
+    // Without a real clock we cannot tell open from closed. Assume open so a
+    // boot before NTP settles still populates the chart.
+    if (!clockIsSynced()) {
+      return true;
+    }
+
+    time_t now;
+    time(&now);
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
+
+    if (timeinfo.tm_wday == 0 || timeinfo.tm_wday == 6) {
+      return false;
+    }
+
+    int currentMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+    int startMinutes = MARKET_OPEN_HOUR * 60 + MARKET_OPEN_MINUTE;
+    int endMinutes =
+        MARKET_CLOSE_HOUR * 60 + MARKET_CLOSE_MINUTE + graceMinutes;
+
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  }
 };
 
 } // namespace StockTracker
