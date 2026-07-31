@@ -13,6 +13,8 @@ private:
     static void handleRoot();
     static void handleGetConfig();
     static void handleSetConfig();
+    static void handleStatus();
+    static void handleCandles();
     static void handleNotFound();
     static String generateHTML();
     

@@ -1,21 +1,29 @@
 #include "web_server.h"
 #include "config.h"
+#include "data_fetcher.h"
+#include "market_hours.h"
+#include "ota_update.h"
+#include "wifi_portal.h"
 #include <WiFi.h>
 
 // Static member definitions
 WebServer StockWebServer::server(80);
 bool StockWebServer::serverStarted = false;
 
+// Starts unconditionally: the fallback AP exists so the device stays
+// configurable with no station link, which only works if the server is up.
 bool StockWebServer::begin(int port) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected, cannot start web server");
-    return false;
+  if (serverStarted) {
+    return true;
   }
 
   // Set up routes
   server.on("/", HTTP_GET, handleRoot);
   server.on("/config", HTTP_GET, handleGetConfig);
   server.on("/config", HTTP_POST, handleSetConfig);
+  server.on("/status", HTTP_GET, handleStatus);
+  server.on("/candles", HTTP_GET, handleCandles);
+  wifiPortalRegisterEndpoints(server);
   server.onNotFound(handleNotFound);
 
   // Enable CORS
@@ -24,7 +32,7 @@ bool StockWebServer::begin(int port) {
   server.begin();
   serverStarted = true;
 
-  Serial.println("Web server started on http://" + WiFi.localIP().toString());
+  Serial.println("Web server up: / (config), /wifi (portal), /status");
   return true;
 }
 
@@ -65,6 +73,113 @@ void StockWebServer::handleSetConfig() {
   } else {
     server.send(400, "application/json", "{\"status\":\"error\"}");
   }
+}
+
+// Single place to answer "is this thing actually working?" - firmware stamp
+// to confirm an OTA landed, clock/market state, link quality, heap, and how
+// the data fetcher is faring.
+void StockWebServer::handleStatus() {
+  time_t now = time(nullptr);
+  struct tm ti;
+  localtime_r(&now, &ti);
+  char localTime[40];
+  strftime(localTime, sizeof(localTime), "%a %Y-%m-%d %H:%M:%S %Z", &ti);
+
+  String j;
+  j.reserve(640);
+  j += "{\"fw\":\"" FW_VERSION "\"";
+  j += ",\"mode\":\"";
+  j += USE_TEST_DATA ? "test" : "live";
+  j += "\",\"symbol\":\"" + STOCK_SYMBOL + "\"";
+  j += ",\"interval\":\"" + YAHOO_INTERVAL + "\"";
+  j += ",\"range\":\"" + YAHOO_RANGE + "\"";
+  j += ",\"time\":" + String((unsigned long)now);
+  j += ",\"local_time\":\"" + String(localTime) + "\"";
+  j += ",\"time_synced\":";
+  j += StockTracker::MarketHoursChecker::clockIsSynced() ? "true" : "false";
+  j += ",\"market_open\":";
+  j += StockTracker::MarketHoursChecker::isMarketOpen() ? "true" : "false";
+  j += ",\"next_market_open\":\"" +
+       String(StockTracker::MarketHoursChecker::getNextMarketOpen().c_str()) +
+       "\"";
+  j += ",\"candles\":" + String(DataFetcher::getCandleCount());
+  j += ",\"bars_shown\":" + String(BARS_TO_SHOW);
+  j += ",\"price\":" + String(DataFetcher::getCurrentPrice(), 2);
+  j += ",\"data_loaded\":";
+  j += DataFetcher::isLoaded() ? "true" : "false";
+  j += ",\"fetch_failures\":" + String(DataFetcher::getConsecutiveFailures());
+  j += ",\"last_success\":" +
+       String((unsigned long)DataFetcher::getLastSuccessTime());
+  j += ",\"wifi\":{\"sta\":";
+  j += wifiPortalIsConnected() ? "true" : "false";
+  j += ",\"ap\":";
+  j += wifiPortalIsAp() ? "true" : "false";
+  if (wifiPortalIsConnected()) {
+    j += ",\"ssid\":\"" + WiFi.SSID() + "\"";
+    j += ",\"ip\":\"" + WiFi.localIP().toString() + "\"";
+    j += ",\"rssi\":" + String(WiFi.RSSI());
+  }
+  j += "}";
+  j += ",\"heap_free\":" + String(ESP.getFreeHeap());
+  j += ",\"uptime_s\":" + String(millis() / 1000);
+  j += "}";
+
+  server.send(200, "application/json", j);
+}
+
+// Dumps the ring buffer, oldest first, so the bars the chart is drawing can
+// be inspected from a host. Bad data on this device looks like a rendering
+// fault, and without this the only way to tell the two apart is to reflash.
+// Defaults to the most recent 60 bars; `?n=` raises it, `?n=0` dumps all.
+// Each entry is [timestamp, open, high, low, close, volume, is_complete].
+void StockWebServer::handleCandles() {
+  int count = DataFetcher::getCandleCount();
+  int wanted = server.hasArg("n") ? server.arg("n").toInt() : 60;
+  if (wanted <= 0 || wanted > count) {
+    wanted = count;
+  }
+
+  int newest = DataFetcher::getNewestIndex();
+  enhanced_candle_t *candles = DataFetcher::getCandles();
+  int intervalSec = DataFetcher::getIntervalSeconds(YAHOO_INTERVAL);
+
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "application/json", "");
+
+  String head;
+  head.reserve(160);
+  head += "{\"symbol\":\"" + STOCK_SYMBOL + "\"";
+  head += ",\"interval\":\"" + YAHOO_INTERVAL + "\"";
+  head += ",\"interval_s\":" + String(intervalSec);
+  head += ",\"count\":" + String(count);
+  head += ",\"newest_index\":" + String(newest);
+  head += ",\"returned\":" + String(wanted);
+  head += ",\"candles\":[";
+  server.sendContent(head);
+
+  String chunk;
+  chunk.reserve(1024);
+  for (int i = wanted - 1; i >= 0; i--) {
+    int idx = (newest - i + MAX_CANDLES) % MAX_CANDLES;
+    const enhanced_candle_t &c = candles[idx];
+    if (i != wanted - 1) {
+      chunk += ',';
+    }
+    chunk += "[" + String((unsigned long)c.timestamp);
+    chunk += "," + String(c.open, 2);
+    chunk += "," + String(c.high, 2);
+    chunk += "," + String(c.low, 2);
+    chunk += "," + String(c.close, 2);
+    chunk += "," + String((unsigned long long)c.volume);
+    chunk += c.is_complete ? ",1]" : ",0]";
+    if (chunk.length() > 768) {
+      server.sendContent(chunk);
+      chunk = "";
+    }
+  }
+  chunk += "]}";
+  server.sendContent(chunk);
+  server.sendContent("");
 }
 
 void StockWebServer::handleNotFound() {
@@ -125,6 +240,7 @@ button:hover{background:#0056b3}
 <body>
 <div class="container">
 <h1>Stock Tracker Config</h1>
+<p style="text-align:center;margin-top:-10px"><a href="/wifi">WiFi networks</a> &middot; <a href="/status">Device status</a> &middot; <a href="/candles">Candle data</a></p>
 <form id="configForm">
 
 <h2>Stock Configuration</h2>

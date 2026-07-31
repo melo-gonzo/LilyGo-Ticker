@@ -17,13 +17,19 @@
 #define DATE_LABEL_ID 0x1007
 #define STATUS_LABEL_ID 0x1008
 #define INTERVAL_LABEL_ID 0x1009
+#define VOLUME_LABEL_ID 0x100A
 
 class EnhancedCandleStick {
 private:
     static lv_obj_t* find_obj_by_id(lv_obj_t *parent, uint32_t id);
-    static void draw_candlestick(lv_obj_t *parent, int index, const enhanced_candle_t& candle, 
+    // Height of the price area: the container less the volume pane below it.
+    static lv_coord_t price_area_height(lv_obj_t *parent);
+    static lv_coord_t volume_pane_height(lv_obj_t *parent);
+    static void draw_candlestick(lv_obj_t *parent, int index, const enhanced_candle_t& candle,
                                float min_price, float max_price, int total_bars);  // Added total_bars parameter
-    static void draw_current_price_line(lv_obj_t *parent, float current_price, 
+    static void draw_volume_bar(lv_obj_t *parent, int index, const enhanced_candle_t& candle,
+                               uint64_t max_volume, int total_bars);
+    static void draw_current_price_line(lv_obj_t *parent, float current_price,
                                       float min_price, float max_price);
     static void draw_price_gridlines(lv_obj_t *parent, float min_price, float max_price);
     static void create_info_panel(lv_obj_t *parent, const String& symbol, 
