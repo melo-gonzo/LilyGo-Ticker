@@ -22,6 +22,7 @@ bool StockWebServer::begin(int port) {
   server.on("/config", HTTP_GET, handleGetConfig);
   server.on("/config", HTTP_POST, handleSetConfig);
   server.on("/status", HTTP_GET, handleStatus);
+  server.on("/candles", HTTP_GET, handleCandles);
   wifiPortalRegisterEndpoints(server);
   server.onNotFound(handleNotFound);
 
@@ -126,6 +127,59 @@ void StockWebServer::handleStatus() {
   server.send(200, "application/json", j);
 }
 
+// Dumps the ring buffer, oldest first, so the bars the chart is drawing can
+// be inspected from a host. Bad data on this device looks like a rendering
+// fault, and without this the only way to tell the two apart is to reflash.
+// Defaults to the most recent 60 bars; `?n=` raises it, `?n=0` dumps all.
+void StockWebServer::handleCandles() {
+  int count = DataFetcher::getCandleCount();
+  int wanted = server.hasArg("n") ? server.arg("n").toInt() : 60;
+  if (wanted <= 0 || wanted > count) {
+    wanted = count;
+  }
+
+  int newest = DataFetcher::getNewestIndex();
+  enhanced_candle_t *candles = DataFetcher::getCandles();
+  int intervalSec = DataFetcher::getIntervalSeconds(YAHOO_INTERVAL);
+
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "application/json", "");
+
+  String head;
+  head.reserve(160);
+  head += "{\"symbol\":\"" + STOCK_SYMBOL + "\"";
+  head += ",\"interval\":\"" + YAHOO_INTERVAL + "\"";
+  head += ",\"interval_s\":" + String(intervalSec);
+  head += ",\"count\":" + String(count);
+  head += ",\"newest_index\":" + String(newest);
+  head += ",\"returned\":" + String(wanted);
+  head += ",\"candles\":[";
+  server.sendContent(head);
+
+  String chunk;
+  chunk.reserve(1024);
+  for (int i = wanted - 1; i >= 0; i--) {
+    int idx = (newest - i + MAX_CANDLES) % MAX_CANDLES;
+    const enhanced_candle_t &c = candles[idx];
+    if (i != wanted - 1) {
+      chunk += ',';
+    }
+    chunk += "[" + String((unsigned long)c.timestamp);
+    chunk += "," + String(c.open, 2);
+    chunk += "," + String(c.high, 2);
+    chunk += "," + String(c.low, 2);
+    chunk += "," + String(c.close, 2);
+    chunk += c.is_complete ? ",1]" : ",0]";
+    if (chunk.length() > 768) {
+      server.sendContent(chunk);
+      chunk = "";
+    }
+  }
+  chunk += "]}";
+  server.sendContent(chunk);
+  server.sendContent("");
+}
+
 void StockWebServer::handleNotFound() {
   server.send(404, "text/plain", "Not found");
 }
@@ -184,7 +238,7 @@ button:hover{background:#0056b3}
 <body>
 <div class="container">
 <h1>Stock Tracker Config</h1>
-<p style="text-align:center;margin-top:-10px"><a href="/wifi">WiFi networks</a> &middot; <a href="/status">Device status</a></p>
+<p style="text-align:center;margin-top:-10px"><a href="/wifi">WiFi networks</a> &middot; <a href="/status">Device status</a> &middot; <a href="/candles">Candle data</a></p>
 <form id="configForm">
 
 <h2>Stock Configuration</h2>

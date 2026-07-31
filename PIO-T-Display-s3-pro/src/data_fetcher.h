@@ -62,7 +62,10 @@ private:
 
   // Inserts a bar, replacing the entry with the same timestamp if present
   // (late revisions, in-progress candle) and appending when it is newer.
-  static void upsertCandle(const enhanced_candle_t &candle);
+  // `intervalSec` is the series' bar length: an append must clear it, which
+  // is what keeps Yahoo's moving regularMarketTime entry from landing as a
+  // new candle. Returns true only if the buffer changed.
+  static bool upsertCandle(const enhanced_candle_t &candle, int intervalSec);
 
   // Calendar seconds to request so the response holds at most `maxBars`
   // bars, clamped to Yahoo's per-interval history limit.

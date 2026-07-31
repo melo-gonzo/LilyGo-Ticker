@@ -210,6 +210,19 @@ bool DataFetcher::fetchWindow(const String &symbol, const String &interval,
   time_t now = time(nullptr);
   out.reserve(ts.size() < MAX_CANDLES ? ts.size() : MAX_CANDLES);
 
+  // Grid anchor for the phantom-bar filter below. Real bars all share one
+  // offset (intraday sessions open at 09:30 ET, so e.g. 60m bars sit at
+  // :30 past the hour, not on the epoch hour) - so alignment is checked
+  // against the first bar of this response, not against the epoch.
+  time_t anchor = -1;
+  for (size_t i = 0; i < ts.size(); i++) {
+    time_t t = ts[i].as<long>();
+    if (t % 60 == 0) {
+      anchor = t;
+      break;
+    }
+  }
+
   for (size_t i = 0; i < ts.size(); i++) {
     if (closes[i].isNull())
       continue; // halted or empty period
@@ -217,6 +230,24 @@ bool DataFetcher::fetchWindow(const String &symbol, const String &interval,
     if (start <= period1)
       continue; // Yahoo degrades the bar sitting exactly at period1; callers
                 // over-reach the window so nothing real is lost
+
+    // Yahoo appends a phantom bar to every windowed response: one entry at
+    // meta.regularMarketTime carrying O=H=L=C=last price. Its timestamp has
+    // second resolution and moves with every request, so the merge below
+    // reads it as a brand new bar and appends a flat doji on every fetch
+    // cycle instead of updating the bar in progress. Real bars always start
+    // on a whole minute and on the series' own interval grid.
+    if (intervalSec < 86400) {
+      if (start % 60 != 0)
+        continue;
+      if (anchor >= 0 && ((start - anchor) % intervalSec) != 0)
+        continue;
+    }
+    // A bar cannot have started in the future. period2 over-reaches by one
+    // interval to pick up the bar in progress, which must not be read as
+    // licence to accept a bar beyond it.
+    if (now > CLOCK_SYNCED_AFTER && start > now)
+      continue;
 
     enhanced_candle_t candle;
     candle.timestamp = start;
@@ -296,21 +327,40 @@ bool DataFetcher::fetchInitialData(const String &symbol, const String &interval,
 // (in-progress candle, late revision) and appending only when it is newer
 // than everything held. Out-of-order gap fills are dropped rather than
 // appended, which would scramble the ring buffer's chronological order.
-void DataFetcher::upsertCandle(const enhanced_candle_t &candle) {
+// Returns true only when the buffer actually changed, so a fetch that adds
+// nothing new does not trigger a full chart rebuild.
+bool DataFetcher::upsertCandle(const enhanced_candle_t &candle,
+                               int intervalSec) {
   for (int age = 0; age < num_candles; age++) {
     int idx = (newest_candle_index - age + MAX_CANDLES) % MAX_CANDLES;
     if (candles[idx].timestamp == candle.timestamp) {
+      const enhanced_candle_t &held = candles[idx];
+      bool same = held.open == candle.open && held.high == candle.high &&
+                  held.low == candle.low && held.close == candle.close &&
+                  held.is_complete == candle.is_complete;
       candles[idx] = candle;
-      return;
+      return !same;
     }
     if (candles[idx].timestamp < candle.timestamp)
       break; // bars are ordered; nothing further back can match
   }
-  if (num_candles > 0 &&
-      candle.timestamp <= candles[newest_candle_index].timestamp) {
-    return;
+  if (num_candles > 0) {
+    time_t newest = candles[newest_candle_index].timestamp;
+    if (candle.timestamp <= newest) {
+      return false;
+    }
+    // Consecutive bars of an intraday series sit exactly one interval apart
+    // on the same grid, so anything closer than that is not a new bar - it
+    // is a mid-bar artifact (Yahoo's regularMarketTime entry is the one that
+    // bites) that would otherwise be appended as a flat doji. Daily and
+    // coarser bars are excluded: calendar months are shorter than the
+    // nominal interval, so the gap test does not hold there.
+    if (intervalSec < 86400 && (candle.timestamp - newest) < intervalSec) {
+      return false;
+    }
   }
   updateCircularBuffer(candle);
+  return true;
 }
 
 bool DataFetcher::updateData() {
@@ -382,10 +432,17 @@ bool DataFetcher::updateData() {
     return false; // window held no trading; nothing to redraw
   }
 
+  bool changed = false;
   for (const enhanced_candle_t &bar : bars) {
-    upsertCandle(bar);
+    changed |= upsertCandle(bar, intervalSec);
   }
   current_price = candles[newest_candle_index].close;
+
+  // Redrawing means tearing down and rebuilding one LVGL object per candle,
+  // so it only happens when a bar actually moved.
+  if (!changed) {
+    return false;
+  }
 
   const enhanced_candle_t &newest = candles[newest_candle_index];
   Serial.printf("%s O %.2f H %.2f L %.2f C %.2f %s\n", current_symbol.c_str(),

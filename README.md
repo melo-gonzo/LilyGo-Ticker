@@ -55,6 +55,7 @@ The device serves three pages, on the LAN or on the fallback AP:
 | `/` | ticker configuration |
 | `/wifi` | scan, join and forget networks |
 | `/status` | JSON health: firmware stamp, clock, market state, link, heap, fetch failures |
+| `/candles` | JSON dump of the bars the chart is drawing (`?n=` bar count, `?n=0` for all) |
 
 Configurable on `/`:
 - **Stock Symbol**: Enter any ticker (AAPL, NVDA, BTC-USD, etc.)
@@ -76,6 +77,14 @@ Live updates re-fetch only the trailing few intervals and merge them by
 timestamp, so candles carry Yahoo's real OHLC rather than an approximation
 built from sampled last-prices, and a brief network outage heals itself on the
 next cycle.
+
+One Yahoo quirk is worth knowing about: every windowed response carries an
+extra entry at `meta.regularMarketTime` holding `open = high = low = close =`
+the last traded price. It has second resolution rather than sitting on the
+interval grid, and it moves with every request — so merging it naively
+appends a flat doji on each fetch cycle and the chart fills up with them.
+Bars are therefore only accepted on the series' own grid, and an append has
+to clear a full interval.
 
 ### Display Features
 - **Candlestick Charts**: Green/red candles with proper OHLC visualization
