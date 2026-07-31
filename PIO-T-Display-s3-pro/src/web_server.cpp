@@ -131,6 +131,7 @@ void StockWebServer::handleStatus() {
 // be inspected from a host. Bad data on this device looks like a rendering
 // fault, and without this the only way to tell the two apart is to reflash.
 // Defaults to the most recent 60 bars; `?n=` raises it, `?n=0` dumps all.
+// Each entry is [timestamp, open, high, low, close, volume, is_complete].
 void StockWebServer::handleCandles() {
   int count = DataFetcher::getCandleCount();
   int wanted = server.hasArg("n") ? server.arg("n").toInt() : 60;
@@ -169,6 +170,7 @@ void StockWebServer::handleCandles() {
     chunk += "," + String(c.high, 2);
     chunk += "," + String(c.low, 2);
     chunk += "," + String(c.close, 2);
+    chunk += "," + String((unsigned long long)c.volume);
     chunk += c.is_complete ? ",1]" : ",0]";
     if (chunk.length() > 768) {
       server.sendContent(chunk);

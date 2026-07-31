@@ -86,8 +86,18 @@ appends a flat doji on each fetch cycle and the chart fills up with them.
 Bars are therefore only accepted on the series' own grid, and an append has
 to clear a full interval.
 
+Volume needs one more guard: Yahoo reports the **first** bar of a windowed
+response with zero volume. The live window slides forward, so every bar
+eventually takes a turn as the first one — left alone that wipes a whole
+session's volume a bar at a time. A zero therefore never overwrites a figure
+already held.
+
 ### Display Features
 - **Candlestick Charts**: Green/red candles with proper OHLC visualization
+- **Volume Pane**: Share volume under the price area, on the same columns and
+  in the same colours as the candles, scaled to the tallest bar on screen.
+  `VOLUME_PANE_HEIGHT` in `src/config.h` sets its height in pixels (0 hides
+  it); the price area takes whatever is left.
 - **Real-time Updates**: Live price line and incomplete candle highlighting
 - **Smart Scaling**: 1-pixel minimum candle width for maximum data density
 - **Market Status**: Visual indicator when market is closed

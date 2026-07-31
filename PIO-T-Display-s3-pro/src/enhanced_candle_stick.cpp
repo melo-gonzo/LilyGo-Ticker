@@ -4,6 +4,68 @@
 #include "ui.h"
 #include <algorithm>
 
+// Share counts run to nine figures and the info panel is 80px wide, so they
+// are abbreviated rather than truncated.
+static String format_volume(uint64_t volume) {
+  char buf[16];
+  if (volume >= 1000000000ULL) {
+    snprintf(buf, sizeof(buf), "V %.2fB", volume / 1000000000.0);
+  } else if (volume >= 1000000ULL) {
+    snprintf(buf, sizeof(buf), "V %.2fM", volume / 1000000.0);
+  } else if (volume >= 1000ULL) {
+    snprintf(buf, sizeof(buf), "V %.1fK", volume / 1000.0);
+  } else {
+    snprintf(buf, sizeof(buf), "V %llu", (unsigned long long)volume);
+  }
+  return String(buf);
+}
+
+// Bar width and spacing, shared so a candle and its volume bar land on the
+// same column. Width can fall to a single pixel, which is the point - it is
+// what lets the display carry several hundred bars.
+static void bar_geometry(lv_coord_t chart_width, int total_bars,
+                         int *candle_width, int *spacing) {
+  if (total_bars < 1) {
+    total_bars = 1;
+  }
+
+  if (CANDLE_PADDING == 0) {
+    // No padding: divide available width evenly
+    *candle_width = chart_width / total_bars;
+    *spacing = 0;
+  } else {
+    // With padding: total_bars * width + (total_bars - 1) * padding fills the
+    // chart, solved for width.
+    int total_padding_space = (total_bars - 1) * CANDLE_PADDING;
+    *candle_width = (chart_width - total_padding_space) / total_bars;
+    *spacing = CANDLE_PADDING;
+
+    // If calculated width is too small, reduce padding
+    if (*candle_width < 1) {
+      *candle_width = 1;
+      int remaining_space = chart_width - total_bars;
+      *spacing = std::max(0, remaining_space / std::max(1, (total_bars - 1)));
+    }
+  }
+
+  *candle_width = std::max(1, *candle_width);
+}
+
+// The volume pane is only worth drawing if it leaves the price area the bulk
+// of the display, so it is capped at a third of the container.
+lv_coord_t EnhancedCandleStick::volume_pane_height(lv_obj_t *parent) {
+  lv_coord_t h = lv_obj_get_height(parent);
+  lv_coord_t pane = VOLUME_PANE_HEIGHT;
+  if (pane < 0) {
+    pane = 0;
+  }
+  return std::min(pane, (lv_coord_t)(h / 3));
+}
+
+lv_coord_t EnhancedCandleStick::price_area_height(lv_obj_t *parent) {
+  return lv_obj_get_height(parent) - volume_pane_height(parent);
+}
+
 lv_obj_t *EnhancedCandleStick::find_obj_by_id(lv_obj_t *parent, uint32_t id) {
   if (parent == NULL)
     return NULL;
@@ -128,8 +190,29 @@ void EnhancedCandleStick::create(lv_obj_t *parent, const String &symbol) {
   // Serial.printf("Display range with padding: %.2f - %.2f\n", draw_min,
   // draw_max);
 
+  // Tallest volume on screen sets the scale of the pane below the price area.
+  uint64_t max_volume = 0;
+  for (int i = 0; i < barsToShow; i++) {
+    int index = (newest_index - i + MAX_CANDLES) % MAX_CANDLES;
+    max_volume = std::max(max_volume, candles[index].volume);
+  }
+
   // Draw grid lines with the visible range
   draw_price_gridlines(chart_container, draw_min, draw_max);
+
+  // Baseline separating the price area from the volume pane.
+  lv_coord_t pane_height = volume_pane_height(chart_container);
+  if (pane_height > 1) {
+    lv_obj_t *baseline = lv_obj_create(chart_container);
+    lv_obj_set_size(baseline, lv_obj_get_width(chart_container) -
+                                  INFO_PANEL_WIDTH,
+                    1);
+    lv_obj_set_style_bg_color(baseline, lv_color_make(90, 90, 90), 0);
+    lv_obj_set_style_bg_opa(baseline, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(baseline, 0, 0);
+    lv_obj_align(baseline, LV_ALIGN_TOP_LEFT, 0,
+                 price_area_height(chart_container));
+  }
 
   // Draw candlesticks - display them in chronological order (oldest to newest,
   // left to right) Serial.printf("Drawing %d candlesticks in chronological
@@ -151,6 +234,8 @@ void EnhancedCandleStick::create(lv_obj_t *parent, const String &symbol) {
 
     draw_candlestick(chart_container, displayPos, candles[dataIndex], draw_min,
                      draw_max, barsToShow);
+    draw_volume_bar(chart_container, displayPos, candles[dataIndex], max_volume,
+                    barsToShow);
   }
 
   // Draw current price line
@@ -161,6 +246,17 @@ void EnhancedCandleStick::create(lv_obj_t *parent, const String &symbol) {
   // Create info panel with visible range min/max
   create_info_panel(chart_container, symbol, current_price, min_price,
                     max_price);
+
+  // Volume of the newest bar, alongside the high/low of the visible window.
+  lv_obj_t *panel = find_obj_by_id(chart_container, INFO_PANEL_ID);
+  if (panel != NULL) {
+    lv_obj_t *vol_label = lv_label_create(panel);
+    lv_label_set_text(vol_label,
+                      format_volume(candles[newest_index].volume).c_str());
+    lv_obj_align(vol_label, LV_ALIGN_TOP_MID, 0, 115);
+    lv_obj_set_style_text_color(vol_label, lv_color_make(170, 170, 170), 0);
+    lv_obj_set_user_data(vol_label, (void *)VOLUME_LABEL_ID);
+  }
 
   // Restore time and date labels
   lv_obj_t *new_info_panel = find_obj_by_id(chart_container, INFO_PANEL_ID);
@@ -193,7 +289,10 @@ void EnhancedCandleStick::create(lv_obj_t *parent, const String &symbol) {
   lv_label_set_text(min_label, min_price_str);
   lv_label_set_text(max_label, max_price_str);
 
-  lv_obj_align(min_label, LV_ALIGN_BOTTOM_LEFT, 5, -5);
+  // The low sits just above the volume pane, not at the very bottom of the
+  // container, so it keeps labelling the price axis it belongs to.
+  lv_obj_align(min_label, LV_ALIGN_BOTTOM_LEFT, 5,
+               -(volume_pane_height(chart_container) + 5));
   lv_obj_align(max_label, LV_ALIGN_TOP_LEFT, 5, 5);
 
   lv_obj_set_style_text_color(min_label, lv_color_white(), 0);
@@ -236,7 +335,7 @@ void EnhancedCandleStick::update(lv_obj_t *parent, const String &symbol) {
           lv_obj_set_user_data(status_label, (void *)STATUS_LABEL_ID);
           lv_obj_set_style_text_color(status_label, lv_color_make(255, 140, 0),
                                       0);
-          lv_obj_align(status_label, LV_ALIGN_TOP_MID, 0, 120);
+          lv_obj_align(status_label, LV_ALIGN_TOP_MID, 0, 145);
         }
         lv_label_set_text(status_label, "MARKET CLOSED");
       }
@@ -285,37 +384,10 @@ void EnhancedCandleStick::draw_candlestick(lv_obj_t *parent, int index,
                                            float min_price, float max_price,
                                            int total_bars) {
   lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
-  lv_coord_t chart_height = lv_obj_get_height(parent);
+  lv_coord_t chart_height = price_area_height(parent);
 
-  // FIXED: Proper bar width calculation that allows 1-pixel candles
   int candle_width, spacing;
-
-  if (CANDLE_PADDING == 0) {
-    // No padding: divide available width evenly
-    candle_width = chart_width / total_bars;
-    spacing = 0;
-  } else {
-    // With padding: calculate optimal width and spacing
-    // Available space = chart_width
-    // Formula: total_bars * candle_width + (total_bars - 1) * padding =
-    // chart_width Solve for candle_width: candle_width = (chart_width -
-    // (total_bars - 1) * padding) / total_bars
-
-    int total_padding_space = (total_bars - 1) * CANDLE_PADDING;
-    candle_width = (chart_width - total_padding_space) / total_bars;
-    spacing = CANDLE_PADDING;
-
-    // If calculated width is too small, reduce padding
-    if (candle_width < 1) {
-      candle_width = 1;
-      // Recalculate spacing with minimum 1-pixel candles
-      int remaining_space = chart_width - total_bars;
-      spacing = std::max(0, remaining_space / std::max(1, (total_bars - 1)));
-    }
-  }
-
-  // Ensure minimum candle width of 1 pixel
-  candle_width = std::max(1, candle_width);
+  bar_geometry(chart_width, total_bars, &candle_width, &spacing);
 
   // Calculate position
   int x = index * (candle_width + spacing);
@@ -369,12 +441,44 @@ void EnhancedCandleStick::draw_candlestick(lv_obj_t *parent, int index,
   lv_obj_align(body, LV_ALIGN_TOP_LEFT, x, body_y);
 }
 
+// One volume bar per candle, growing up from the bottom of the container and
+// sharing the candle's column and colour. Scaled against the tallest bar on
+// screen rather than an absolute figure, so a quiet stretch still reads.
+void EnhancedCandleStick::draw_volume_bar(lv_obj_t *parent, int index,
+                                          const enhanced_candle_t &candle,
+                                          uint64_t max_volume, int total_bars) {
+  lv_coord_t pane_height = volume_pane_height(parent);
+  if (pane_height <= 1 || max_volume == 0 || candle.volume == 0) {
+    return;
+  }
+
+  lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
+  int candle_width, spacing;
+  bar_geometry(chart_width, total_bars, &candle_width, &spacing);
+  int x = index * (candle_width + spacing);
+
+  // Leave a pixel of air under the price area so the two panes stay distinct.
+  lv_coord_t usable = pane_height - 1;
+  int height = (int)((double)candle.volume / (double)max_volume * usable);
+  height = constrain(height, 1, (int)usable);
+
+  lv_color_t color = (candle.close >= candle.open) ? lv_color_make(0, 160, 0)
+                                                   : lv_color_make(160, 0, 0);
+
+  lv_obj_t *bar = lv_obj_create(parent);
+  lv_obj_set_size(bar, candle_width, height);
+  lv_obj_set_style_bg_color(bar, color, 0);
+  lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(bar, 0, 0);
+  lv_obj_align(bar, LV_ALIGN_BOTTOM_LEFT, x, 0);
+}
+
 void EnhancedCandleStick::draw_current_price_line(lv_obj_t *parent,
                                                   float current_price,
                                                   float min_price,
                                                   float max_price) {
   lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
-  lv_coord_t chart_height = lv_obj_get_height(parent);
+  lv_coord_t chart_height = price_area_height(parent);
 
   int y_current = chart_height * (1.0f - (current_price - min_price) /
                                              (max_price - min_price));
@@ -392,7 +496,7 @@ void EnhancedCandleStick::draw_price_gridlines(lv_obj_t *parent,
                                                float min_price,
                                                float max_price) {
   lv_coord_t chart_width = lv_obj_get_width(parent) - INFO_PANEL_WIDTH;
-  lv_coord_t chart_height = lv_obj_get_height(parent);
+  lv_coord_t chart_height = price_area_height(parent);
 
   // FIXED: Use a more intelligent grid calculation
   float price_range = max_price - min_price;

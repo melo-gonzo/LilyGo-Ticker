@@ -205,6 +205,7 @@ bool DataFetcher::fetchWindow(const String &symbol, const String &interval,
   JsonArray highs = quote["high"];
   JsonArray lows = quote["low"];
   JsonArray closes = quote["close"];
+  JsonArray volumes = quote["volume"];
 
   int intervalSec = getIntervalSeconds(interval);
   time_t now = time(nullptr);
@@ -255,6 +256,7 @@ bool DataFetcher::fetchWindow(const String &symbol, const String &interval,
     candle.open = opens[i].isNull() ? candle.close : opens[i].as<float>();
     candle.high = highs[i].isNull() ? candle.close : highs[i].as<float>();
     candle.low = lows[i].isNull() ? candle.close : lows[i].as<float>();
+    candle.volume = volumes[i].isNull() ? 0 : volumes[i].as<uint64_t>();
     candle.is_complete = (start + intervalSec) <= now;
 
     if (!candle.is_complete && !keepPartial)
@@ -334,11 +336,20 @@ bool DataFetcher::upsertCandle(const enhanced_candle_t &candle,
   for (int age = 0; age < num_candles; age++) {
     int idx = (newest_candle_index - age + MAX_CANDLES) % MAX_CANDLES;
     if (candles[idx].timestamp == candle.timestamp) {
+      enhanced_candle_t merged = candle;
+      // Yahoo reports the first bar of a windowed response with zero volume.
+      // The live window slides, so every bar eventually takes a turn as the
+      // first one - left alone, that wipes the volume of the whole session a
+      // bar at a time. A zero never overwrites a figure we already have.
+      if (merged.volume == 0) {
+        merged.volume = candles[idx].volume;
+      }
       const enhanced_candle_t &held = candles[idx];
-      bool same = held.open == candle.open && held.high == candle.high &&
-                  held.low == candle.low && held.close == candle.close &&
-                  held.is_complete == candle.is_complete;
-      candles[idx] = candle;
+      bool same = held.open == merged.open && held.high == merged.high &&
+                  held.low == merged.low && held.close == merged.close &&
+                  held.volume == merged.volume &&
+                  held.is_complete == merged.is_complete;
+      candles[idx] = merged;
       return !same;
     }
     if (candles[idx].timestamp < candle.timestamp)
@@ -445,8 +456,9 @@ bool DataFetcher::updateData() {
   }
 
   const enhanced_candle_t &newest = candles[newest_candle_index];
-  Serial.printf("%s O %.2f H %.2f L %.2f C %.2f %s\n", current_symbol.c_str(),
-                newest.open, newest.high, newest.low, newest.close,
+  Serial.printf("%s O %.2f H %.2f L %.2f C %.2f V %llu %s\n",
+                current_symbol.c_str(), newest.open, newest.high, newest.low,
+                newest.close, (unsigned long long)newest.volume,
                 newest.is_complete ? "" : "(building)");
   return true;
 }
@@ -472,6 +484,7 @@ void DataFetcher::buildIntradayCandle(float price, time_t timestamp) {
     newCandle.high = price;
     newCandle.low = price;
     newCandle.close = price;
+    newCandle.volume = random(200000, 1200000);
     newCandle.is_complete = false;
 
     updateCircularBuffer(newCandle);
@@ -483,6 +496,7 @@ void DataFetcher::buildIntradayCandle(float price, time_t timestamp) {
     newCandle.high = price;
     newCandle.low = price;
     newCandle.close = price;
+    newCandle.volume = random(200000, 1200000);
     newCandle.is_complete = false;
 
     updateCircularBuffer(newCandle);
@@ -494,6 +508,7 @@ void DataFetcher::buildIntradayCandle(float price, time_t timestamp) {
     candles[newest_candle_index].low =
         std::min(candles[newest_candle_index].low, price);
     candles[newest_candle_index].timestamp = timestamp;
+    candles[newest_candle_index].volume += random(20000, 120000);
 
     if (update_count >= TEST_DATA_UPDATES_PER_BAR) {
       candles[newest_candle_index].is_complete = true;
@@ -650,6 +665,7 @@ void DataFetcher::initializeTestData() {
     // Ensure low is never higher than open/close and high is never lower
     candle.low = std::min({candle.low, candle.open, candle.close});
     candle.high = std::max({candle.high, candle.open, candle.close});
+    candle.volume = random(200000, 1200000);
 
     candle.timestamp = now - (test_candles - i) * CANDLE_COLLECTION_DURATION;
     candle.is_complete = true;

@@ -13,6 +13,7 @@ typedef struct {
   float close;
   float high;
   float low;
+  uint64_t volume;
   time_t timestamp;
   bool is_complete; // Flag to indicate if candle is complete
 } enhanced_candle_t;

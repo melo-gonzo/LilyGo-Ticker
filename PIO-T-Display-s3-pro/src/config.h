@@ -15,6 +15,11 @@
 #define INFO_PANEL_WIDTH 80
 #define CANDLE_PADDING 0
 
+// Pixels reserved at the bottom of the chart for volume bars, out of a 240px
+// tall display. The price area gets whatever is left, so raising this trades
+// price resolution for volume resolution; 0 hides volume entirely.
+#define VOLUME_PANE_HEIGHT 44
+
 // Fallback access point + mDNS/OTA identity. The AP is raised whenever no
 // saved network is reachable, so the device is always onboardable; the same
 // password authenticates over-the-air updates.
